@@ -379,6 +379,7 @@ protected:
 			auto spr = ButtonSprite::create(names[i], 70, true, "bigFont.fnt",
 				on ? "GJ_button_02.png" : "GJ_button_04.png", 28.f, 0.6f);
 			spr->setScale(0.62f);
+			if (on) spr->setColor(ACCENT); // active tab wears the theme colour
 			auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(GDMenuPopup::onTab));
 			btn->setTag(i);
 			btn->setPosition({ 62.f, y });
@@ -943,6 +944,7 @@ protected:
 
 	void onPlay(CCObject*) {
 		if (g_bot.state == BotState::Playing || g_bot.state == BotState::Resuming) { bot::stop(); refresh(); return; }
+		if (g_bot.state == BotState::Recording) { notify("Stop recording first", NotificationIcon::Warning); return; }
 		if (g_bot.inputs.empty()) { notify("No bot loaded - pick one in the Bots tab", NotificationIcon::Warning); s_tab = TabBots; refresh(); return; }
 		if (!needLevel()) return;
 		closeAndResume();
@@ -957,6 +959,8 @@ protected:
 	}
 
 	void onResumeSession(CCObject*) {
+		// resuming replaces the current macro - never do that behind the user's back
+		if (g_bot.state != BotState::Idle) { notify("Stop the current recording / playback first", NotificationIcon::Warning); return; }
 		if (!needLevel()) return;
 		closeAndResume();
 		bot::resumeSession();
@@ -995,6 +999,10 @@ protected:
 		Ref<GDMenuPopup> self = this;
 		SessionsPopup::create(
 			[self](int id) {
+				if (g_bot.state != BotState::Idle) {
+					notify("Stop the current recording / playback first", NotificationIcon::Warning);
+					return;
+				}
 				if (id != g_bot.levelID || !PlayLayer::get()) {
 					notify("Open that level first, then resume from its pause menu", NotificationIcon::Warning);
 					return;
