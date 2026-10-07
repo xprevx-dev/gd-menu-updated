@@ -6,7 +6,9 @@
 // ---------------------------------------------------------------- persistence
 bool extras::cheatsActive() {
 	return g_hacks.noclip || (g_hacks.speedhack && g_hacks.speed != 1.f) || g_hacks.autoclick || g_bot.stepper
-		|| g_bot.state == BotState::Playing || g_bot.state == BotState::Resuming || g_hacks.startPosIndex >= 0;
+		|| g_bot.state == BotState::Playing || g_bot.state == BotState::Resuming || g_hacks.startPosIndex >= 0
+		// gameplay-altering settings (cached flags, refreshed by hacks::reloadSettings)
+		|| g_hacks.allPassable || g_hacks.jumpHack || g_hacks.physicsBypass || g_hacks.forcePlatformer;
 }
 
 void extras::saveHackState() {
@@ -129,8 +131,11 @@ class $modify(ExtrasGameLayer, GJBaseGameLayer) {
 		if (!mine) return;
 		if (extras::cheatsActive()) g_hacks.cheatedAttempt = true;
 
-		// noclip accuracy: count ticks where noclip saved you
-		if (g_hacks.noclip && !m_player1->m_isDead) {
+		// noclip accuracy: count ticks where noclip saved you.
+		// !isHalfTick: with Click Between Steps on, processCommands also runs on
+		// half-steps - counting those inflated the denominator and skewed accuracy
+		// towards 100% (the "noclip accuracy is wrong with CBS" fix).
+		if (!isHalfTick && g_hacks.noclip && !m_player1->m_isDead) {
 			g_hacks.accTicks++;
 			if (g_hacks.accHitThisTick) {
 				g_hacks.accDeadTicks++;
@@ -176,6 +181,9 @@ class $modify(ExtrasPlayLayer, PlayLayer) {
 		PlayLayer::resetLevel();
 		s_autoDown = false;
 		if (Mod::get()->getSettingValue<bool>("hitboxes-on-death")) m_hitboxesOnDeath = true;
+		// free attempts: the on-screen counter stays at 1 (cosmetic only - the level's
+		// saved attempt count is untouched)
+		if (Mod::get()->getSettingValue<bool>("free-attempts")) m_attempts = 1;
 		g_hacks.cheatedAttempt = extras::cheatsActive();
 		// accuracy is per run: only reset when restarting from the beginning (not on practice checkpoints)
 		if (!m_isPracticeMode || m_checkpointArray->count() == 0) resetAccuracy();
@@ -208,6 +216,7 @@ class $modify(ExtrasPlayLayer, PlayLayer) {
 			}
 		}
 		clips::onDeath(this, this->getCurrentPercent()); // a REAL death: the clip ends here
+		hud::noteRunEnd(this->getCurrentPercent());      // session Best Run candidate
 		if (g_hacks.safeMode && g_hacks.cheatedAttempt) {
 			bool old = m_isTestMode;
 			m_isTestMode = true;  // test mode = GD won't save a new best %

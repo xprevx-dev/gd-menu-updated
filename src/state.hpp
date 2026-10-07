@@ -16,6 +16,7 @@ using namespace geode::prelude;
 // <Geode/Geode.hpp> / the per-TU modify includes)
 class PlayLayer;
 class GJBaseGameLayer;
+class GJGameLevel;
 
 // ---------------------------------------------------------------- bot
 enum class BotState { Idle, Recording, Playing, Resuming };
@@ -54,12 +55,21 @@ struct HackData {
 	bool accuracy = false;        // noclip accuracy + deaths label (only shown if enabled)
 	int accTicks = 0, accDeadTicks = 0, accDeaths = 0;
 	bool accHitThisTick = false, accWasHit = false;
+	// 2.7.0: cached setting flags for per-tick / per-collision code paths
+	bool allPassable = false;     // fall through every solid
+	bool jumpHack = false;        // infinite jumps (hold jump in mid-air)
+	bool physicsBypass = false;   // fixed 240 tps regardless of render FPS
+	bool forcePlatformer = false; // any level plays as platformer
 	std::string keyConflict;      // "" or a warning shown in the Keys tab when two actions share a key
 	std::vector<Keybind> kToggleStep, kStep, kNoclip, kHitbox, kSpeed, kSpPrev, kSpNext;
 	std::vector<Ref<StartPosObject>> startPositions; // sorted by X
 	int startPosIndex = -1;                           // -1 = level start
 };
 extern HackData g_hacks;
+
+// how many GDMenu panels/popups are open (pause-menu auto-resume must not fire
+// while the user is in the menu - defined in ui.cpp)
+extern int g_menuOpenCount;
 
 // ---------------------------------------------------------------- helpers
 void notify(std::string const& msg, NotificationIcon icon = NotificationIcon::Info);
@@ -101,6 +111,9 @@ namespace hud {
 	bool showFrame();
 	bool showPercent();
 	bool showSpeed();
+	// run tracking for the Best Run / Run From counters (session-scoped, per level)
+	void noteRunStart(float percent); // resetLevel: where this run began (start pos / checkpoint)
+	void noteRunEnd(float percent);   // real death or completion: candidate for session best
 }
 
 // ---------------------------------------------------------------- clips
@@ -165,6 +178,10 @@ namespace hacks {
 	void switchStartPos(int dir);
 	std::string startPosLabel();
 	void updateStepperControls();   // show/hide touch step bar (only while stepper is ON)
+	// force platformer mutates the shared GJGameLevel (m_levelLength = 5), so the
+	// original value is tracked and MUST be restored when leaving the level
+	void applyForcedPlatformer(GJGameLevel* level); // before PlayLayer::init
+	void restoreForcedPlatformer();                 // from PlayLayer::onQuit (bot.cpp)
 }
 
 namespace extras {

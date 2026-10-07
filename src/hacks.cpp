@@ -17,6 +17,12 @@ static std::vector<Keybind> binds(std::string_view id) {
 
 void hacks::reloadSettings() {
 	g_hacks.speed = (float)Mod::get()->getSettingValue<double>("speedhack");
+	// cached flags for hot paths (per-tick / per-collision): refreshed on every
+	// settings change by the listener at the bottom of this file
+	g_hacks.allPassable    = Mod::get()->getSettingValue<bool>("all-passable");
+	g_hacks.jumpHack       = Mod::get()->getSettingValue<bool>("jump-hack");
+	g_hacks.physicsBypass  = Mod::get()->getSettingValue<bool>("physics-bypass");
+	g_hacks.forcePlatformer = Mod::get()->getSettingValue<bool>("force-platformer");
 	struct KeySlot { char const* id; std::vector<Keybind>* slot; char const* label; };
 	KeySlot keys[] = {
 		{ "toggle-stepper-key", &g_hacks.kToggleStep, "Toggle stepper" },
@@ -103,6 +109,32 @@ void hacks::switchStartPos(int dir) {
 	notify(hacks::startPosLabel());
 }
 
+// ---------------------------------------------------------------- force platformer
+// GJGameLevel::isPlatformer() is literally "m_levelLength == 5", so forcing platformer
+// mode = temporarily writing that field. The GJGameLevel object outlives the level
+// (cached lists / search results), so the original value MUST be restored on quit -
+// bot.cpp's onQuit hook calls restoreForcedPlatformer().
+namespace {
+	GJGameLevel* s_forcedLevel = nullptr;
+	int s_origLevelLength = 0;
+}
+
+void hacks::applyForcedPlatformer(GJGameLevel* level) {
+	hacks::restoreForcedPlatformer(); // never leave an old mutation behind
+	if (level && g_hacks.forcePlatformer && level->m_levelLength != 5) {
+		s_forcedLevel = level;
+		s_origLevelLength = level->m_levelLength;
+		level->m_levelLength = 5;
+	}
+}
+
+void hacks::restoreForcedPlatformer() {
+	if (s_forcedLevel) {
+		s_forcedLevel->m_levelLength = s_origLevelLength;
+		s_forcedLevel = nullptr;
+	}
+}
+
 // ---------------------------------------------------------------- stepper touch bar
 // Only appears while the frame stepper is ON (you can't step on a phone otherwise).
 // Normal gameplay shows nothing - everything else lives in the pause menu.
@@ -170,7 +202,11 @@ namespace {
 	bool s_audioApplied[2] = { false, false };
 
 	void syncMusicAudio(float speed) {
-		bool want = speed != 1.f && Mod::get()->getSettingValue<bool>("speedhack-audio");
+		// factor = (speedhack pitch if sync is on) * (standalone pitch shift)
+		bool syncOn = speed != 1.f && Mod::get()->getSettingValue<bool>("speedhack-audio");
+		float pitch = (float)std::clamp(Mod::get()->getSettingValue<double>("audio-pitch"), 0.25, 4.0);
+		float factor = (syncOn ? speed : 1.f) * pitch;
+		bool want = factor != 1.f;
 		if (!want && !s_audioApplied[0] && !s_audioApplied[1]) return; // idle fast path
 		auto eng = FMODAudioEngine::get();
 		if (!eng) return;
@@ -184,7 +220,7 @@ namespace {
 					s_audioBase[id] = f;
 					s_audioApplied[id] = true;
 				}
-				if (s_audioBase[id] > 1.f) ch->setFrequency(s_audioBase[id] * speed);
+				if (s_audioBase[id] > 1.f) ch->setFrequency(s_audioBase[id] * factor);
 			}
 			else if (s_audioApplied[id]) {
 				ch->setFrequency(s_audioBase[id]);
@@ -205,6 +241,9 @@ class $modify(HackScheduler, CCScheduler) {
 };
 
 class $modify(HackGameLayer, GJBaseGameLayer) {
+	// physics-bypass accumulator: leftover real time that hasn't been stepped yet
+	struct Fields { float physAcc = 0.f; };
+
 	void updateDebugDraw() {
 		bool old = m_isDebugDrawEnabled;
 		if (g_hacks.hitboxes) m_isDebugDrawEnabled = true;
@@ -221,6 +260,24 @@ class $modify(HackGameLayer, GJBaseGameLayer) {
 			GJBaseGameLayer::update(1.f / 240.f);
 			return;
 		}
+		// physics bypass (CBF/xdBot style): step physics at a fixed 240 tps no matter
+		// the display FPS. dt already carries speedhack/resume scaling, so those keep
+		// working. Substeps are capped so a tab-out spike drops time instead of
+		// spiralling into a freeze.
+		if (g_hacks.physicsBypass && PlayLayer::get()
+			&& static_cast<GJBaseGameLayer*>(PlayLayer::get()) == this) {
+			constexpr float STEP = 1.f / 240.f;
+			constexpr int MAX_SUBSTEPS = 16; // = keeps up down to ~15 render FPS
+			m_fields->physAcc += dt;
+			if (m_fields->physAcc > STEP * MAX_SUBSTEPS) m_fields->physAcc = STEP * MAX_SUBSTEPS;
+			int n = 0;
+			while (m_fields->physAcc >= STEP && n < MAX_SUBSTEPS) {
+				GJBaseGameLayer::update(STEP);
+				m_fields->physAcc -= STEP;
+				n++;
+			}
+			return;
+		}
 		GJBaseGameLayer::update(dt);
 	}
 };
@@ -230,6 +287,7 @@ class $modify(HackPlayLayer, PlayLayer) {
 		g_hacks.startPositions.clear();
 		g_hacks.startPosIndex = -1;
 		hacks::reloadSettings();
+		hacks::applyForcedPlatformer(level); // must happen BEFORE the real init reads it
 		if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
 
 		std::sort(g_hacks.startPositions.begin(), g_hacks.startPositions.end(),
@@ -239,7 +297,23 @@ class $modify(HackPlayLayer, PlayLayer) {
 		// the touch step bar lives on m_uiLayer, which is recreated per attempt: re-add it
 		// when restarting while the stepper is still on (it used to vanish until re-toggled)
 		hacks::updateStepperControls();
+		// auto practice mode: flip on next frame (same path as the pause-menu button)
+		if (Mod::get()->getSettingValue<bool>("auto-practice") && !m_isPracticeMode)
+			this->scheduleOnce(schedule_selector(HackPlayLayer::autoPractice), 0.f);
 		return true;
+	}
+
+	void autoPractice(float) {
+		if (!m_isPracticeMode) this->togglePracticeMode(true);
+	}
+
+	// practice music sync bypass: vanilla restarts/resyncs the song on every checkpoint
+	// respawn; skipping the call lets the music keep flowing uninterrupted
+	void startMusic() {
+		if (Mod::get()->getSettingValue<bool>("practice-music-bypass") && m_isPracticeMode &&
+		    m_checkpointArray && m_checkpointArray->count() > 0)
+			return;
+		PlayLayer::startMusic();
 	}
 
 	void addObject(GameObject* obj) {
