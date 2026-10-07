@@ -616,17 +616,6 @@ protected:
 		clips::saveCurrent();
 	}
 
-	void onLoop(CCObject*) {
-		Mod::get()->setSettingValue<bool>("loop-playback", !Mod::get()->getSettingValue<bool>("loop-playback"));
-		refresh();
-	}
-	void onStopPct(CCObject* s) {
-		float v = (float)Mod::get()->getSettingValue<double>("stop-percent") + stepOf(s);
-		v = std::clamp(std::round(v), 0.f, 100.f);
-		Mod::get()->setSettingValue<double>("stop-percent", v);
-		refresh();
-	}
-
 	// ------------------------------------------------------------ Bots tab (replays folder)
 	static inline std::string s_filter;   // search box text (survives tab switches)
 	static inline int s_sortMode = 0;     // 0 name, 1 newest, 2 inputs

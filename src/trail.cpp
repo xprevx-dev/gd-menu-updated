@@ -77,7 +77,7 @@ class $modify(TrailPlayLayer, PlayLayer) {
 			return;
 		}
 		auto p = m_player1->getPosition();
-		if (m_fields->hasLast && (p - m_fields->last).getLengthSquared() > 0.001f) {
+		if (m_fields->hasLast && (p - m_fields->last).getLengthSq() > 0.001f) {
 			if (!m_fields->current || m_fields->segInChunk >= m_fields->chunkSize) ensureChunk();
 			auto c = extras::accent();
 			m_fields->current->drawSegment(m_fields->last, p, 1.f,
