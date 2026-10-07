@@ -1,5 +1,5 @@
 # GDMenu
-Geode mod for GD 2.2081 (Geode v5): a replay bot (GDR2 / .gdbot), resume where you left off, frame stepper, noclip, speedhack, hitboxes, start-pos switcher and an optional in-game HUD. Works on **PC and mobile**.
+Geode mod for GD 2.2081 (Geode v5): a replay bot (GDR2 / .gdbot), **always-on attempt clips** (watch/save your last runs), resume where you left off, frame stepper, noclip (+ limits, per player), speedhack (+ music sync), hitboxes, start-pos switcher, quick respawn and an optional in-game HUD. Works on **PC and mobile**.
 
 <img src="logo.png" width="150" alt="the mod's logo" />
 
@@ -10,7 +10,8 @@ Nothing is shown while you play (unless you enable the HUD). **Pause** and tap t
 |---|---|
 | **Bot** | Status, Record / Play / Save Bot, **Resume session**, and the **Sessions** manager (every saved resume point, per-level delete, clear all) |
 | **Bots** | Your replay library: search, sort (name / newest / inputs), Load / Rename / Delete, Open Folder. Shows inputs, length, level, size and whether a file carries physics data |
-| **Hacks** | Noclip, Show Hitboxes, Speedhack with fine speed controls, Player Trail (scrolls) |
+| **Clips** | **Always-on attempt recorder**: your last N attempts with % / time / inputs - **Watch** one replay live, **Save** it as `.gdr2`, or delete it |
+| **Hacks** | Noclip (+ per-player, hit & accuracy limits), Show Hitboxes (+ on death), Speedhack (+ music sync), Quick Respawn, Player Trail, CBS/CBF bot compatibility, Cheat Indicator (scrolls) |
 | **Tools** | Frame Stepper (+ touch step buttons on phones), Start Pos Switcher, Loop Playback, Stop-At-% |
 | **More** | Autoclicker, Safe Mode, Noclip Accuracy, lifetime stats |
 | **Style** | 8 theme accents (last one is your own RGB colour), bubble opacity/size, 3 preset profiles |
@@ -30,9 +31,19 @@ Every action has a **native Geode keybind** (Settings > GDMenu): capture any key
 ## Playback options
 - **Loop Playback** - the bot restarts automatically when it dies, for watching runs on repeat.
 - **Stop Playback At %** - playback stops at a percent so you can drill one section.
+- **Quick Respawn** - your own attempts auto-restart 0.1-3.0 s after death (Mega Hack style, 0 = off).
+
+## Attempt clips ("watch that run again")
+GDMenu records **every attempt all the time** - inputs only, no per-tick work, so it costs no performance. Pause > GDM bubble > **Clips**:
+
+- **Watch** - the bot engine replays the attempt live on screen (your run, reproduced).
+- **Save** - exports it as a standard `.gdr2` into your library (+ Eclipse's folder when installed).
+- Each row shows attempt number, % reached, duration, input count, `practice` / `COMPLETE` / `CBS/CBF!` badges.
+- Keeps the last N attempts (default 5, max 50, 0 = off) with a 32 MB memory cap, oldest evicted first.
+- **CBS** (vanilla Click Between Steps) and **CBF** (Syzzi's Click Between Frames) land inputs *between* ticks, which no tick-based replay can reproduce: GDMenu pauses both while the bot runs (restores them after), flags clips recorded with them, and can optionally pause CBS for clips too.
 
 ## Safe Mode
-On by default: after noclip / speedhack / autoclicker / stepper / start pos / bot playback was used in an attempt, GDMenu makes sure **no percent or completion is saved or submitted**. Keep it on - it's what makes this a practice tool instead of a cheat.
+On by default: after noclip / speedhack / autoclicker / stepper / start pos / bot playback was used in an attempt, GDMenu makes sure **no percent or completion is saved or submitted**. Keep it on - it's what makes this a practice tool instead of a cheat. The **Cheat Indicator** backs it up visibly: while any hack is active, the floating GDM bubble says **CHEATS** in red (Mega Hack style).
 
 ## Mobile & PC
 - **PC:** keybinds for everything, hidden during gameplay.
@@ -41,9 +52,10 @@ On by default: after noclip / speedhack / autoclicker / stepper / start pos / bo
 ## Build & test
 Pushes and tags are built automatically by GitHub Actions; tags (`v*`) also publish a GitHub Release (download the `.geode` from Releases). To build locally: `geode build`.
 
-The serialization core is plain C++ and has its own tests (no Geode or GD needed):
+The serialization core and the clip ring are plain C++ with their own tests (no Geode or GD needed):
 ```
-bash tests/run_tests.sh
+bash tests/run_tests.sh          # 53 replay/session checks + 41 clip-ring checks
+SANITIZE=1 bash tests/run_tests.sh   # same under ASan + UBSan (what CI runs)
 ```
 
 ## Credits

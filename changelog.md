@@ -1,3 +1,30 @@
+# v2.6.0
+The Mega Hack / Eclipse feature drop + always-on attempt replay.
+
+## Always-on attempt clips - "show me that run again"
+- **GDMenu now records every attempt, all the time** (new **Clips** tab). A clip stores *input events only* - nothing runs per tick, so recording costs no performance and never touches your physics.
+- **Watch** replays any of your last attempts live through the bot engine - your run, reproduced on screen. **Save** exports it as a standard `.gdr2` (+ Eclipse copy), **X** deletes it.
+- Keeps the last **N attempts** (default 5, up to 50, 0 = off - adjustable right in the Clips tab). The ring is also memory-capped (32 MB) and evicts oldest-first; its logic is Geode-free and covered by **41 new host-side unit tests** (CI, incl. ASan/UBSan).
+- Clips know their context: attempt number, % reached, duration, input count, practice mode, a green **COMPLETE** badge - and a **CBS/CBF!** flag when sub-tick inputs were possible (those can drift <1 tick on replay; no tick-based bot can do better).
+- Practice clips survive checkpoint respawns (inputs after the respawn point are trimmed, same rule as bot recording); quitting mid-attempt keeps the clip.
+
+## Bot system: CBS/CBF compatibility fixes
+- **CBS (Click Between Steps - RobTop's official 2.208 feature)** is now paused while the bot records/plays/resumes and restored afterwards: tick-based replays can't express half-step inputs. Same policy Eclipse uses for CBF. Toggle: **Pause CBS/CBF For Bot** (on by default).
+- **CBF integration hardened**: GDMenu only touches Syzzi's `soft-toggle` when that setting actually exists in the installed CBF version - a renamed/missing key can no longer silently no-op or clobber a wrong value.
+- **Pause CBS For Clips** (new, off by default): forces vanilla CBS off while passive clips record, for frame-perfect clip replays. Off by default = your vanilla CBS choice is never touched while you just play.
+
+## New hacks (Mega Hack / Eclipse style)
+- **Noclip per player**: protect P1 and/or P2 separately (dual & 2-player practice).
+- **Noclip limits**: *hit limit* (after N saves, hits are lethal again) and *accuracy floor* (below X% noclip accuracy, hits are lethal) - one notification when it trips, resets per attempt.
+- **Quick Respawn**: auto-restart 0.1-3.0 s after dying (Mega Hack's "Respawn Time"). Practice keeps vanilla checkpoint behaviour; the frame stepper still freezes everything.
+- **Sync Music With Speedhack**: pitches the song with your speedhack (Eclipse / xdBot style), auto-restores when it ends or you leave the level.
+- **Force Hitboxes On Death**: keeps GD's show-hitboxes-on-death forced on while enabled.
+- **Cheat Indicator**: the GDM bubble says **CHEATS** in red while any hack is active - Safe Mode still blocks saving cheated progress.
+- **HUD counters**: FPS (wall-clock measured, speedhack-proof), attempts, jumps and level time on one compact line - each optional; the HUD itself stays off by default.
+
+## Menu
+- New **Clips** tab (sidebar tightened to fit 8 tabs); the Hacks tab scrolls with all the new rows.
+
 # v2.5.0
 The "make it infinitely better" update.
 

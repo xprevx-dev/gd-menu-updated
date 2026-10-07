@@ -9,12 +9,18 @@ A **replay bot** and practice toolkit for Geometry Dash, made for **both PC and 
 - **Practice mode support**: exact physics when you respawn at a checkpoint, plus per-tick position/speed so playback can't drift.
 - **Save as <cg>.gdr2</c> or <cg>.gdbot</c>** (same GDR2 bytes, standard "Phys" extension) - your bots work in other GDR2 bots, and one tap copies them into Eclipse's folder.
 - **Your bots library**: search it, sort it, rename entries, see length/size/physics at a glance. Corrupt files can't crash the game - they just show as unsupported.
-- Click Between Frames is paused automatically while the bot runs so replays stay in sync.
+- **Click Between Steps** (vanilla) and **Click Between Frames** (Syzzi) are paused automatically while the bot runs, and restored after - sub-tick inputs would desync any tick-based replay.
+
+## <cy>Attempt Clips</c>
+- GDMenu **records every attempt, all the time** - inputs only, so it costs zero performance.
+- **Clips tab**: your last runs with % / time / inputs / badges. **Watch** replays one live through the bot, **Save** keeps it as a standard <cg>.gdr2</c>.
+- Keeps the last N attempts (default 5, 0 = off) in a memory-capped ring - oldest gets evicted first.
 
 ## <cy>Tools & Hacks</c>
 - **Frame Stepper**: freeze the game and move one tick at a time (touch buttons on phones).
-- **Noclip**, **Speedhack** (0.1x-5x), **Show Hitboxes**, **Start Pos Switcher**.
-- **Player Trail** draws your flight path; the HUD's **input viewer** shows held buttons live.
+- **Noclip** (per player, with optional **hit limit** and **accuracy floor**), **Speedhack** (0.1x-5x, optionally **pitching the music** with it), **Show Hitboxes** (+ forced **on death**), **Start Pos Switcher**, **Quick Respawn** (auto-retry after 0.1-3 s).
+- **Player Trail** draws your flight path; the HUD's **input viewer** shows held buttons live, plus optional **FPS / attempts / jumps / time** counters.
+- **Cheat Indicator**: the bubble turns red and says CHEATS while any hack is on.
 - Every action has a **real keybind**: capture any key, combo or mouse button in Settings.
 
 ## <cy>More & Style</c>
