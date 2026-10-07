@@ -11,7 +11,7 @@ Nothing is shown while you play (unless you enable the HUD). **Pause** and tap t
 | **Bot** | Status, Record / Play / Save Bot, **Resume session**, and the **Sessions** manager (every saved resume point, per-level delete, clear all) |
 | **Bots** | Your replay library: search, sort (name / newest / inputs), Load / Rename / Delete, Open Folder. Shows inputs, length, level, size and whether a file carries physics data |
 | **Hacks** | Noclip, Show Hitboxes, Speedhack with fine speed controls |
-| **Tools** | Frame Stepper (+ touch step buttons on phones), Start Pos Switcher |
+| **Tools** | Frame Stepper (+ touch step buttons on phones), Start Pos Switcher, Loop Playback, Stop-At-% |
 | **More** | Autoclicker, Safe Mode, Noclip Accuracy |
 | **Style** | 7 theme accents, bubble opacity/size, 3 preset profiles |
 | **Keys** | Your keybinds at a glance + conflict warnings; click one in Settings to capture a new key |
