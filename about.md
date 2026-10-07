@@ -19,8 +19,8 @@ A **replay bot** and practice toolkit for Geometry Dash, made for **both PC and 
 
 ## <cy>Tools & Hacks</c>
 - **Frame Stepper**: freeze the game and move one tick at a time (touch buttons on phones).
-- **Noclip** (per player, with optional **hit limit** and **accuracy floor**), **Speedhack** (0.1x-5x, optionally **pitching the music** with it), **Show Hitboxes** (+ forced **on death**), **Start Pos Switcher**, **Quick Respawn** (auto-retry after 0.1-3 s).
-- **Player Trail** draws your flight path; the HUD's **input viewer** shows held buttons live, plus optional **FPS / attempts / jumps / time** counters.
+- **Searchable Hacks tab** - one list, one search box, every hack: **Noclip** (per player, **hit limit**, **accuracy floor**), **All Passable**, **Jump Hack** (infinite jumps), **Physics Bypass** (fixed 240 ticks/s at any FPS), **Speedhack** (0.1x-5x + **pitch shift** + music sync), **Free Attempts**, **Auto Practice**, **Force Platformer**, **Practice Music Bypass**, **Quick Respawn**, **Show Hitboxes** (+ on death), **No Particles / No Pulse / No Wave Trail**, **Unlock Icons**, **Hide Pause Menu**, **Start Pos Switcher**.
+- **Player Trail** draws your flight path with an adjustable **Trail Length** (it rolls smoothly instead of blinking away); the HUD's **input viewer** shows held buttons live, plus optional **FPS / attempts / jumps / time / CPS / best run / run-from** counters.
 - **Cheat Indicator**: the bubble turns red and says CHEATS while any hack is on.
 - Every action has a **real keybind**: capture any key, combo or mouse button in Settings.
 
@@ -28,7 +28,7 @@ A **replay bot** and practice toolkit for Geometry Dash, made for **both PC and 
 - **Autoclicker** with adjustable clicks per second (recorded by the bot like real clicks).
 - **Safe Mode** (on by default): cheated attempts never save percent or completions.
 - **Noclip Accuracy** counter (optional).
-- **In-game HUD** (optional, off by default): state, frame, percent, speed, accuracy in a corner you pick.
+- **In-game HUD** (optional, off by default): state, frame, percent (1-3 decimals), speed, accuracy, **best run**, **CPS** and **run-from** in a corner you pick.
 - **Themes**, bubble opacity/size and **preset profiles**.
 
 ## <cy>How to open it</c>

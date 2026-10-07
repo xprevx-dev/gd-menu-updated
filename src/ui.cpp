@@ -11,6 +11,11 @@
 #include <Geode/ui/ScrollLayer.hpp>
 #include <Geode/ui/NineSlice.hpp>
 #include <Geode/utils/file.hpp>
+#include <functional>
+
+// how many GDMenu panels/popups are open (see state.hpp) - the pause-menu
+// auto-resume ("Hide Pause Menu") must never fire while the user is in the menu
+int g_menuOpenCount = 0;
 
 namespace {
 	// ------------------------------------------------------------ small UI helpers
@@ -369,11 +374,9 @@ protected:
 	CCSize m_area;                    // size of the content area
 	CCPoint m_areaOrigin;             // bottom-left of the content area
 
-public:
-	static inline int s_openCount = 0;
 protected:
-	void onEnter() override { Popup::onEnter(); s_openCount++; }
-	void onExit() override { s_openCount = std::max(0, s_openCount - 1); Popup::onExit(); }
+	void onEnter() override { Popup::onEnter(); g_menuOpenCount++; }
+	void onExit() override { g_menuOpenCount = std::max(0, g_menuOpenCount - 1); Popup::onExit(); }
 
 	bool init(PauseLayer* pause) {
 		if (!Popup::init(460.f, 290.f)) return false;
@@ -893,73 +896,286 @@ protected:
 		return v <= 0.f ? "off" : fmt::format("{:.0f}%", v);
 	}
 
+	// One row of the Hacks list: either a toggle (get/act) or a stepper (text/steps/act).
+	// The whole tab is generated from this table - adding a hack = adding one entry.
+	struct HackRow {
+		char const* title;
+		char const* desc;
+		std::function<bool()> get;   // toggle state (null = stepper row)
+		std::function<std::string()> text; // stepper value (null = toggle row)
+		std::vector<std::pair<char const*, float>> steps;
+		std::function<void(float)> act; // toggle: act(0); stepper: act(delta)
+	};
+
+	static inline std::string s_hackFilter; // search box text (survives tab switches)
+
+	static std::vector<HackRow> const& hackRows() {
+		static std::vector<HackRow> rows = {
+			// ---- survival / movement cheats
+			{ "Noclip", "You can't die (anticheat spike still works)",
+				[] { return g_hacks.noclip; }, nullptr, {},
+				[](float) { hacks::toggleNoclip(); } },
+			{ "Noclip: Player 1", "Noclip protects player 1",
+				[] { return Mod::get()->getSettingValue<bool>("noclip-p1"); }, nullptr, {},
+				[](float) { flipSetting("noclip-p1"); } },
+			{ "Noclip: Player 2", "Noclip protects player 2 (dual / 2-player)",
+				[] { return Mod::get()->getSettingValue<bool>("noclip-p2"); }, nullptr, {},
+				[](float) { flipSetting("noclip-p2"); } },
+			{ "Noclip hit limit", "Stop noclip after this many saved hits (0 = unlimited)",
+				nullptr, hitLimitText, { { "-10", -10.f }, { "-1", -1.f }, { "+1", 1.f }, { "+10", 10.f } },
+				[](float d) {
+					int64_t v = Mod::get()->getSettingValue<int64_t>("noclip-hit-limit") + (int64_t)d;
+					Mod::get()->setSettingValue<int64_t>("noclip-hit-limit", std::clamp<int64_t>(v, 0, 9999));
+				} },
+			{ "Noclip accuracy floor", "Turn noclip off below this accuracy % (0 = never)",
+				nullptr, accLimitText, { { "-5", -5.f }, { "-1", -1.f }, { "+1", 1.f }, { "+5", 5.f } },
+				[](float d) {
+					float v = (float)Mod::get()->getSettingValue<double>("noclip-acc-limit") + d;
+					v = std::clamp(std::round(v), 0.f, 100.f);
+					Mod::get()->setSettingValue<double>("noclip-acc-limit", (double)v);
+				} },
+			{ "All Passable (Experimental)", "Fall straight through blocks and solids - hazards still kill (pair with noclip for full ghost mode)",
+				[] { return Mod::get()->getSettingValue<bool>("all-passable"); }, nullptr, {},
+				[](float) { flipSetting("all-passable"); } },
+			{ "Jump Hack (Infinite Jumps)", "Hold jump mid-air to keep re-jumping and hover upward",
+				[] { return Mod::get()->getSettingValue<bool>("jump-hack"); }, nullptr, {},
+				[](float) { flipSetting("jump-hack"); } },
+			{ "Physics Bypass (Experimental)", "Physics runs at a fixed 240 ticks/s at any FPS (CBF/xdBot style). Below ~15 FPS the game slows down instead of skipping frames",
+				[] { return Mod::get()->getSettingValue<bool>("physics-bypass"); }, nullptr, {},
+				[](float) { flipSetting("physics-bypass"); } },
+			{ "Free Attempts", "The on-screen attempt counter stays at 1 (cosmetic - your real stats are untouched)",
+				[] { return Mod::get()->getSettingValue<bool>("free-attempts"); }, nullptr, {},
+				[](float) { flipSetting("free-attempts"); } },
+			// ---- speed / audio
+			{ "Speedhack", "Change the game speed",
+				[] { return g_hacks.speedhack; }, nullptr, {},
+				[](float) { hacks::toggleSpeed(); } },
+			{ "Speed", "Game speed multiplier",
+				nullptr, [] { return fmt::format("{:.2f}x", g_hacks.speed); },
+				{ { "-0.25", -0.25f }, { "-0.05", -0.05f }, { "+0.05", 0.05f }, { "+0.25", 0.25f } },
+				[](float d) { hacks::setSpeed(g_hacks.speed + d); } },
+			{ "Sync Music With Speedhack", "Pitch the song with the speed so music stays in sync",
+				[] { return Mod::get()->getSettingValue<bool>("speedhack-audio"); }, nullptr, {},
+				[](float) { flipSetting("speedhack-audio"); } },
+			{ "Audio Pitch Shift", "Pitch the music up/down independently of speed (1.00x = normal)",
+				nullptr, [] { return fmt::format("{:.2f}x", Mod::get()->getSettingValue<double>("audio-pitch")); },
+				{ { "-0.25", -0.25f }, { "-0.05", -0.05f }, { "+0.05", 0.05f }, { "+0.25", 0.25f } },
+				[](float d) {
+					double v = Mod::get()->getSettingValue<double>("audio-pitch") + d;
+					v = std::clamp(std::round(v * 100.0) / 100.0, 0.25, 4.0);
+					Mod::get()->setSettingValue<double>("audio-pitch", v);
+				} },
+			{ "Quick respawn", "Auto-click retry this fast after dying (0 = off)",
+				nullptr, quickRespawnText, { { "-0.5", -0.5f }, { "-0.1", -0.1f }, { "+0.1", 0.1f }, { "+0.5", 0.5f } },
+				[](float d) {
+					float v = (float)Mod::get()->getSettingValue<double>("quick-respawn") + d;
+					v = std::clamp(std::round(v * 10.f) / 10.f, 0.f, 3.f);
+					Mod::get()->setSettingValue<double>("quick-respawn", (double)v);
+				} },
+			// ---- practice / mode
+			{ "Auto Practice Mode", "Automatically enter practice mode when a level starts",
+				[] { return Mod::get()->getSettingValue<bool>("auto-practice"); }, nullptr, {},
+				[](float) { flipSetting("auto-practice"); } },
+			{ "Force Platformer (Experimental)", "Play any level in platformer mode. Restored when you quit the level; restart the attempt after toggling",
+				[] { return Mod::get()->getSettingValue<bool>("force-platformer"); }, nullptr, {},
+				[](float) { flipSetting("force-platformer"); } },
+			{ "Practice Music Bypass", "Checkpoint respawns don't restart/resync the song - the music keeps flowing",
+				[] { return Mod::get()->getSettingValue<bool>("practice-music-bypass"); }, nullptr, {},
+				[](float) { flipSetting("practice-music-bypass"); } },
+			// ---- visuals
+			{ "Show Hitboxes", "Draw hitboxes outside practice mode",
+				[] { return g_hacks.hitboxes; }, nullptr, {},
+				[](float) { hacks::toggleHitboxes(); } },
+			{ "Hitboxes On Death", "Force GD's show-hitboxes-on-death option on",
+				[] { return Mod::get()->getSettingValue<bool>("hitboxes-on-death"); }, nullptr, {},
+				[](float) { flipSetting("hitboxes-on-death"); } },
+			{ "No Particles", "Hide particle objects the level spawns (new spawns only; death effects stay)",
+				[] { return Mod::get()->getSettingValue<bool>("no-particles"); }, nullptr, {},
+				[](float) { flipSetting("no-particles"); } },
+			{ "No Pulse", "Pulse triggers leave colours untouched",
+				[] { return Mod::get()->getSettingValue<bool>("no-pulse"); }, nullptr, {},
+				[](float) { flipSetting("no-pulse"); } },
+			{ "No Wave Trail", "Hide the wave's trail streak in every gamemode",
+				[] { return Mod::get()->getSettingValue<bool>("no-wave-trail"); }, nullptr, {},
+				[](float) { flipSetting("no-wave-trail"); } },
+			{ "Player Trail", "Draw your flight path in the theme colour",
+				[] { return Mod::get()->getSettingValue<bool>("player-trail"); }, nullptr, {},
+				[](float) { flipSetting("player-trail"); } },
+			{ "Trail Length (seconds)", "How long the player trail stays visible",
+				nullptr, [] { return fmt::format("{}s", (int)Mod::get()->getSettingValue<int64_t>("trail-length")); },
+				{ { "-5", -5.f }, { "-1", -1.f }, { "+1", 1.f }, { "+5", 5.f } },
+				[](float d) {
+					int64_t v = Mod::get()->getSettingValue<int64_t>("trail-length") + (int64_t)d;
+					Mod::get()->setSettingValue<int64_t>("trail-length", std::clamp<int64_t>(v, 1, 60));
+				} },
+			// ---- bot / clips / meta
+			{ "Pause CBS/CBF For Bot", "Click Between Steps (vanilla) + Click Between Frames (mod) land inputs between ticks - replays can't. Both pause while the bot runs, then restore",
+				[] { return Mod::get()->getSettingValue<bool>("manage-cbs"); }, nullptr, {},
+				[](float) { flipSetting("manage-cbs"); } },
+			{ "Pause CBS For Clips", "Force vanilla CBS off while clips record so replays are frame-perfect. Off by default: your CBS choice stays untouched",
+				[] { return Mod::get()->getSettingValue<bool>("clips-pause-cbs"); }, nullptr, {},
+				[](float) { flipSetting("clips-pause-cbs"); } },
+			{ "Cheat Indicator", "The GDM bubble says CHEATS in red while any hack is active",
+				[] { return Mod::get()->getSettingValue<bool>("cheat-indicator"); }, nullptr, {},
+				[](float) { flipSetting("cheat-indicator"); } },
+			{ "Hide Pause Menu", "Pause auto-closes after 0.8s (anti-rest). Click the GDM bubble in that window to reach GDMenu",
+				[] { return Mod::get()->getSettingValue<bool>("hide-pause"); }, nullptr, {},
+				[](float) { flipSetting("hide-pause"); } },
+			{ "Unlock Icons", "Every icon looks unlocked in the garage (client-side cosmetic; server items unaffected)",
+				[] { return Mod::get()->getSettingValue<bool>("unlock-icons"); }, nullptr, {},
+				[](float) { flipSetting("unlock-icons"); } },
+			{ "Safe Mode", "No % / completions saved after using noclip, speed, bot...",
+				[] { return g_hacks.safeMode; }, nullptr, {},
+				[](float) { g_hacks.safeMode = !g_hacks.safeMode; extras::saveHackState(); } },
+		};
+		return rows;
+	}
+
+	ScrollLayer* m_hacksScroll = nullptr;
+
 	void buildHacksTab() {
 		float W = m_area.width, H = m_area.height;
 		heading("Hacks", H - 16.f);
-		auto scroll = ScrollLayer::create({ W - 8.f, H - 30.f });
-		scroll->setPosition({ 4.f, 4.f });
-		m_content->addChild(scroll);
-		float total = 692.f;
-		scroll->m_contentLayer->setContentSize({ W - 8.f, total });
-		auto hmenu = CCMenu::create();
-		hmenu->setPosition({ 0, 0 });
-		scroll->m_contentLayer->addChild(hmenu, 2);
-		m_host = scroll->m_contentLayer;
+
+		auto search = TextInput::create(W - 16.f, "Search hacks...");
+		search->setPosition({ W / 2, H - 40.f });
+		search->setMaxCharCount(40);
+		if (!s_hackFilter.empty()) search->setString(s_hackFilter);
+		search->setCallback([this](std::string const& s) { s_hackFilter = s; this->rebuildHacksList(); });
+		m_content->addChild(search);
+
+		m_hacksScroll = ScrollLayer::create({ W - 16.f, H - 78.f });
+		m_hacksScroll->setPosition({ 8.f, 8.f });
+		m_content->addChild(m_hacksScroll);
+		rebuildHacksList();
+	}
+
+	// per-row visuals kept for in-place updates (no full rebuild on every click:
+	// scroll position and search focus survive)
+	struct RowEls { CCDrawNode* bar = nullptr; CCLabelBMFont* title = nullptr; CCLabelBMFont* value = nullptr; };
+	std::vector<RowEls> m_rowEls; // parallel to hackRows()
+
+	void rebuildHacksList() {
+		if (!m_hacksScroll) return;
+		float W = m_area.width;
+		auto content = m_hacksScroll->m_contentLayer;
+		content->removeAllChildren();
+		auto& rows = hackRows();
+		m_rowEls.assign(rows.size(), {});
+
+		auto low = [](std::string const& s) {
+			std::string o = s;
+			for (auto& c : o) c = (char)std::tolower((unsigned char)c);
+			return o;
+		};
+		std::string f = low(s_hackFilter);
+
+		std::vector<int> visible;
+		for (int i = 0; i < (int)rows.size(); i++) {
+			if (f.empty() || low(std::string(rows[i].title) + " " + rows[i].desc).find(f) != std::string::npos)
+				visible.push_back(i);
+		}
+
+		float sumH = 0.f;
+		for (int i : visible) sumH += rows[i].get ? 42.f : 40.f;
+		float scrollH = m_hacksScroll->getContentSize().height;
+		float total = std::max(scrollH, sumH + 8.f);
+		content->setContentSize({ W - 16.f, total });
+
+		if (visible.empty()) {
+			auto none = label("Nothing matches your search.", "chatFont.fnt", 0.65f, SUBTLE);
+			none->setAlignment(kCCTextAlignmentCenter);
+			none->setPosition({ (W - 16.f) / 2, scrollH / 2 });
+			content->addChild(none);
+			return;
+		}
+
+		auto menu = CCMenu::create();
+		menu->setPosition({ 0, 0 });
+		content->addChild(menu, 2);
 
 		float y = total - 21.f;
-		toggleRow(hmenu, y, "Noclip", "You can't die (anticheat spike still works)",
-			g_hacks.noclip, menu_selector(GDMenuPopup::onNoclip)); y -= 42.f;
-		toggleRow(hmenu, y, "Noclip: Player 1", "Noclip protects player 1",
-			Mod::get()->getSettingValue<bool>("noclip-p1"), menu_selector(GDMenuPopup::onNoclipP1)); y -= 42.f;
-		toggleRow(hmenu, y, "Noclip: Player 2", "Noclip protects player 2 (dual / 2-player)",
-			Mod::get()->getSettingValue<bool>("noclip-p2"), menu_selector(GDMenuPopup::onNoclipP2)); y -= 42.f;
-		stepperRow(hmenu, y, "Noclip hit limit", hitLimitText(),
-			{ { "-10", -10.f }, { "-1", -1.f }, { "+1", 1.f }, { "+10", 10.f } }, menu_selector(GDMenuPopup::onNoclipHitLimit)); y -= 40.f;
-		stepperRow(hmenu, y, "Noclip accuracy floor", accLimitText(),
-			{ { "-5", -5.f }, { "-1", -1.f }, { "+1", 1.f }, { "+5", 5.f } }, menu_selector(GDMenuPopup::onNoclipAccLimit)); y -= 40.f;
-		toggleRow(hmenu, y, "Show Hitboxes", "Draw hitboxes outside practice mode",
-			g_hacks.hitboxes, menu_selector(GDMenuPopup::onHitbox)); y -= 42.f;
-		toggleRow(hmenu, y, "Hitboxes On Death", "Force GD's show-hitboxes-on-death option on",
-			Mod::get()->getSettingValue<bool>("hitboxes-on-death"), menu_selector(GDMenuPopup::onHitboxesDeath)); y -= 42.f;
-		toggleRow(hmenu, y, "Speedhack", "Change the game speed",
-			g_hacks.speedhack, menu_selector(GDMenuPopup::onSpeed)); y -= 42.f;
-
-		// speed controls
-		auto bg = card({ W - 16.f, 44.f }, 60);
-		bg->setPosition({ W / 2, y });
-		host()->addChild(bg);
-		auto val = label(fmt::format("{:.2f}x", g_hacks.speed), "bigFont.fnt", 0.6f, ACCENT);
-		val->setPosition({ W / 2, y });
-		host()->addChild(val);
-		struct Step { const char* text; float delta; float x; };
-		for (auto s : { Step{ "-0.25", -0.25f, W / 2 - 125.f }, Step{ "-0.05", -0.05f, W / 2 - 70.f },
-		                Step{ "+0.05", 0.05f, W / 2 + 70.f }, Step{ "+0.25", 0.25f, W / 2 + 125.f } }) {
-			auto b = button(s.text, "GJ_button_04.png", this, menu_selector(GDMenuPopup::onSpeedStep), 40, 0.55f);
-			b->setUserObject(CCFloat::create(s.delta));
-			b->setPosition({ s.x, y });
-			hmenu->addChild(b);
+		for (int i : visible) {
+			auto& r = rows[i];
+			if (r.get) { // toggle row (42 high, same look as toggleRow)
+				bool on = r.get();
+				auto bg = card({ W - 16.f, 38.f }, 60);
+				bg->setPosition({ W / 2, y });
+				content->addChild(bg);
+				auto bar = CCDrawNode::create();
+				auto acc = ccc4f(ACCENT.r / 255.f, ACCENT.g / 255.f, ACCENT.b / 255.f, 0.9f);
+				bar->drawRect(CCPoint(0.f, -19.f), CCPoint(3.f, 19.f), acc, 0.f, acc);
+				bar->setPosition({ 8.f, y });
+				bar->setVisible(on);
+				content->addChild(bar);
+				auto t = label(r.title, "bigFont.fnt", 0.42f, on ? ccColor3B{ 140, 255, 140 } : ccColor3B{ 255, 255, 255 });
+				t->setAnchorPoint({ 0, 0.5f });
+				t->setPosition({ 18.f, y + 7.f });
+				content->addChild(t);
+				auto d = label(r.desc, "chatFont.fnt", 0.55f, SUBTLE);
+				d->setAnchorPoint({ 0, 0.5f });
+				fit(d, W - 86.f, 0.55f);
+				d->setPosition({ 18.f, y - 8.f });
+				content->addChild(d);
+				auto toggler = CCMenuItemToggler::createWithStandardSprites(this, menu_selector(GDMenuPopup::onRowToggle), 0.7f * UI_SCALE);
+				toggler->toggle(on);
+				toggler->setTag(i);
+				toggler->setPosition({ W - 28.f, y });
+				menu->addChild(toggler);
+				m_rowEls[i] = { bar, t, nullptr };
+				y -= 42.f;
+			}
+			else { // stepper row (40 high, same look as stepperRow)
+				auto bg = card({ W - 16.f, 34.f }, 60);
+				bg->setPosition({ W / 2, y });
+				content->addChild(bg);
+				auto t = label(r.title, "bigFont.fnt", 0.36f);
+				t->setAnchorPoint({ 0, 0.5f });
+				t->setPosition({ 16.f, y });
+				content->addChild(t);
+				float cx = W - 100.f;
+				auto v = label(r.text ? r.text() : "", "bigFont.fnt", 0.45f, ACCENT);
+				fit(v, 60.f, 0.45f);
+				v->setPosition({ cx, y });
+				content->addChild(v);
+				int n = (int)r.steps.size(), k = 0;
+				for (auto& [txt, dd] : r.steps) {
+					float off = (k < n / 2) ? -(n / 2 - k) * 34.f - 20.f : (k - n / 2 + 1) * 34.f + 20.f;
+					auto b = button(txt, "GJ_button_04.png", this, menu_selector(GDMenuPopup::onRowStep), 26, 0.5f);
+					b->setUserObject(CCFloat::create(dd));
+					b->setTag(i);
+					b->setPosition({ cx + off, y });
+					menu->addChild(b);
+					k++;
+				}
+				m_rowEls[i] = { nullptr, nullptr, v };
+				y -= 40.f;
+			}
 		}
-		y -= 36.f;
-		auto reset = button("Reset to 1x", "GJ_button_04.png", this, menu_selector(GDMenuPopup::onSpeedReset), 80, 0.55f);
-		reset->setPosition({ W / 2, y });
-		hmenu->addChild(reset);
-		y -= 40.f;
+		m_hacksScroll->scrollToTop();
+	}
 
-		toggleRow(hmenu, y, "Sync Music With Speedhack", "Pitch the song with the speed so music stays in sync",
-			Mod::get()->getSettingValue<bool>("speedhack-audio"), menu_selector(GDMenuPopup::onAudioSync)); y -= 42.f;
-		stepperRow(hmenu, y, "Quick respawn", quickRespawnText(),
-			{ { "-0.5", -0.5f }, { "-0.1", -0.1f }, { "+0.1", 0.1f }, { "+0.5", 0.5f } }, menu_selector(GDMenuPopup::onQuickRespawn)); y -= 40.f;
-		toggleRow(hmenu, y, "Player Trail", "Draw your flight path in the theme colour",
-			Mod::get()->getSettingValue<bool>("player-trail"), menu_selector(GDMenuPopup::onTrail)); y -= 42.f;
-		toggleRow(hmenu, y, "Pause CBS/CBF For Bot", "Click Between Steps (vanilla) + Click Between Frames (mod) land inputs between ticks - replays can't. Both pause while the bot runs, then restore.",
-			Mod::get()->getSettingValue<bool>("manage-cbs"), menu_selector(GDMenuPopup::onManageCbs)); y -= 42.f;
-		toggleRow(hmenu, y, "Pause CBS For Clips", "Force vanilla CBS off while clips record so replays are frame-perfect. Off by default: your CBS choice stays untouched.",
-			Mod::get()->getSettingValue<bool>("clips-pause-cbs"), menu_selector(GDMenuPopup::onClipsCbs)); y -= 42.f;
-		toggleRow(hmenu, y, "Cheat Indicator", "The GDM bubble says CHEATS in red while any hack is active",
-			Mod::get()->getSettingValue<bool>("cheat-indicator"), menu_selector(GDMenuPopup::onCheatInd)); y -= 42.f;
-
-		m_host = nullptr;
-		scroll->scrollToTop();
+	// shared row handlers: the button's tag is the hackRows() index
+	void onRowToggle(CCObject* sender) {
+		auto* toggler = typeinfo_cast<CCMenuItemToggler*>(sender);
+		int i = toggler ? toggler->getTag() : -1;
+		auto& rows = hackRows();
+		if (i < 0 || i >= (int)rows.size() || !rows[i].get || !rows[i].act) return;
+		rows[i].act(0.f); // the toggler already flipped its own sprites on click
+		bool on = rows[i].get();
+		if (i < (int)m_rowEls.size()) {
+			if (m_rowEls[i].bar) m_rowEls[i].bar->setVisible(on);
+			if (m_rowEls[i].title) m_rowEls[i].title->setColor(on ? ccColor3B{ 140, 255, 140 } : ccColor3B{ 255, 255, 255 });
+		}
+	}
+	void onRowStep(CCObject* sender) {
+		auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+		int i = btn ? btn->getTag() : -1;
+		auto& rows = hackRows();
+		if (!btn || i < 0 || i >= (int)rows.size() || rows[i].get || !rows[i].act) return;
+		rows[i].act(stepOf(btn));
+		if (i < (int)m_rowEls.size() && m_rowEls[i].value && rows[i].text)
+			m_rowEls[i].value->setString(rows[i].text().c_str());
 	}
 
 	// ------------------------------------------------------------ Tools tab
@@ -1274,44 +1490,11 @@ protected:
 
 	void onFolder(CCObject*)     { geode::utils::file::openFolder(replays::dir()); }
 	void onRefresh(CCObject*)    { refresh(); }
-	void onNoclip(CCObject*)     { hacks::toggleNoclip(); refresh(); }
-	void onTrail(CCObject*) {
-		Mod::get()->setSettingValue<bool>("player-trail", !Mod::get()->getSettingValue<bool>("player-trail"));
-		refresh();
-	}
-	// setting-backed toggles (one flip helper keeps them all identical)
+	// setting-backed toggles (one flip helper keeps them all identical; the Hacks
+	// table rows dispatch through it too - see hackRows()/onRowToggle)
 	static void flipSetting(char const* key) {
 		Mod::get()->setSettingValue<bool>(key, !Mod::get()->getSettingValue<bool>(key));
 	}
-	void onNoclipP1(CCObject*)     { flipSetting("noclip-p1"); refresh(); }
-	void onNoclipP2(CCObject*)     { flipSetting("noclip-p2"); refresh(); }
-	void onHitboxesDeath(CCObject*){ flipSetting("hitboxes-on-death"); refresh(); }
-	void onAudioSync(CCObject*)    { flipSetting("speedhack-audio"); refresh(); }
-	void onManageCbs(CCObject*)    { flipSetting("manage-cbs"); refresh(); }
-	void onClipsCbs(CCObject*)     { flipSetting("clips-pause-cbs"); refresh(); }
-	void onCheatInd(CCObject*)     { flipSetting("cheat-indicator"); refresh(); }
-	void onNoclipHitLimit(CCObject* s) {
-		int64_t v = Mod::get()->getSettingValue<int64_t>("noclip-hit-limit") + (int64_t)stepOf(s);
-		v = std::clamp<int64_t>(v, 0, 9999);
-		Mod::get()->setSettingValue<int64_t>("noclip-hit-limit", v);
-		refresh();
-	}
-	void onNoclipAccLimit(CCObject* s) {
-		float v = (float)Mod::get()->getSettingValue<double>("noclip-acc-limit") + stepOf(s);
-		v = std::clamp(std::round(v), 0.f, 100.f);
-		Mod::get()->setSettingValue<double>("noclip-acc-limit", (double)v);
-		refresh();
-	}
-	void onQuickRespawn(CCObject* s) {
-		float v = (float)Mod::get()->getSettingValue<double>("quick-respawn") + stepOf(s);
-		v = std::clamp(std::round(v * 10.f) / 10.f, 0.f, 3.f);
-		Mod::get()->setSettingValue<double>("quick-respawn", (double)v);
-		refresh();
-	}
-	void onHitbox(CCObject*)     { hacks::toggleHitboxes(); refresh(); }
-	void onSpeed(CCObject*)      { hacks::toggleSpeed(); refresh(); }
-	void onSpeedStep(CCObject* s){ hacks::setSpeed(g_hacks.speed + static_cast<CCFloat*>(static_cast<CCNode*>(s)->getUserObject())->getValue()); refresh(); }
-	void onSpeedReset(CCObject*) { hacks::setSpeed(1.f); refresh(); }
 	void onStepper(CCObject*)    { hacks::toggleStepper(); refresh(); }
 	void onSpPrev(CCObject*)     { if (needLevel()) { closeAndResume(); hacks::switchStartPos(-1); } }
 	void onSpNext(CCObject*)     { if (needLevel()) { closeAndResume(); hacks::switchStartPos(1); } }
@@ -1358,7 +1541,7 @@ protected:
 		if (!scene) return false;
 		if (auto pl = PlayLayer::get(); pl && !pl->m_isPaused && !scene->getChildByType<PauseLayer>(0)) return false;
 		if (auto ed = LevelEditorLayer::get(); ed && ed->m_playbackMode == PlaybackMode::Playing) return false;
-		if (GDMenuPopup::s_openCount > 0) return false;
+		if (g_menuOpenCount > 0) return false;
 		if (scene->getChildByType<FLAlertLayer>(0)) return false;
 		return true;
 	}

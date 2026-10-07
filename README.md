@@ -1,5 +1,5 @@
 # GDMenu
-Geode mod for GD 2.2081 (Geode v5): a replay bot (GDR2 / .gdbot), **always-on attempt clips** (watch/save your last runs), resume where you left off, frame stepper, noclip (+ limits, per player), speedhack (+ music sync), hitboxes, start-pos switcher, quick respawn and an optional in-game HUD. Works on **PC and mobile**.
+Geode mod for GD 2.2081 (Geode v5): a replay bot (GDR2 / .gdbot), **always-on attempt clips** (watch/save your last runs), resume where you left off, frame stepper, a **searchable hacks tab** (noclip + limits, speedhack, pitch shift, physics bypass, all passable, jump hack, force platformer, free attempts, auto practice, no particles/pulse/wave trail, unlock icons...), hitboxes, start-pos switcher, quick respawn and an optional in-game HUD (FPS, CPS, best run, run-from). Works on **PC and mobile**.
 
 <img src="logo.png" width="150" alt="the mod's logo" />
 
@@ -11,7 +11,7 @@ Nothing is shown while you play (unless you enable the HUD). **Pause** and tap t
 | **Bot** | Status, Record / Play / Save Bot, **Save Attempt** (the run you're in right now → `.gdr2`, even mid-attempt), **Resume session**, and the **Sessions** manager (every saved resume point, per-level delete, clear all) |
 | **Bots** | Your replay library: search, sort (name / newest / inputs), Load / Rename / Delete, Open Folder. Shows inputs, length, level, size and whether a file carries physics data |
 | **Clips** | **Always-on attempt recorder**: your last N attempts with % / time / inputs - **Watch** one replay live, **Save** it as `.gdr2`, or delete it |
-| **Hacks** | Noclip (+ per-player, hit & accuracy limits), Show Hitboxes (+ on death), Speedhack (+ music sync), Quick Respawn, Player Trail, CBS/CBF bot compatibility, Cheat Indicator (scrolls) |
+| **Hacks** | **Searchable list of every hack**: Noclip (+ per-player, hit & accuracy limits), All Passable, Jump Hack, Physics Bypass, Free Attempts, Speedhack (+ speed & pitch steppers, music sync), Quick Respawn, Auto Practice, Force Platformer, Practice Music Bypass, Show Hitboxes (+ on death), No Particles / Pulse / Wave Trail, Player Trail (+ length), Unlock Icons, Hide Pause, CBS/CBF compatibility, Cheat Indicator, Safe Mode |
 | **Tools** | Frame Stepper (+ touch step buttons on phones), Start Pos Switcher, Loop Playback, Stop-At-% |
 | **More** | Autoclicker, Safe Mode, Noclip Accuracy, lifetime stats |
 | **Style** | 8 theme accents (last one is your own RGB colour), bubble opacity/size, 3 preset profiles |
@@ -43,7 +43,7 @@ GDMenu records **every attempt all the time** - inputs only, no per-tick work, s
 - **CBS** (vanilla Click Between Steps) and **CBF** (Syzzi's Click Between Frames) land inputs *between* ticks, which no tick-based replay can reproduce: GDMenu pauses both while the bot runs (restores them after), flags clips recorded with them, and can optionally pause CBS for clips too.
 
 ## Safe Mode
-On by default: after noclip / speedhack / autoclicker / stepper / start pos / bot playback was used in an attempt, GDMenu makes sure **no percent or completion is saved or submitted**. Keep it on - it's what makes this a practice tool instead of a cheat. The **Cheat Indicator** backs it up visibly: while any hack is active, the floating GDM bubble says **CHEATS** in red (Mega Hack style).
+On by default: after noclip / speedhack / autoclicker / stepper / start pos / bot playback / all passable / jump hack / physics bypass / force platformer was used in an attempt, GDMenu makes sure **no percent or completion is saved or submitted**. Keep it on - it's what makes this a practice tool instead of a cheat. The **Cheat Indicator** backs it up visibly: while any hack is active, the floating GDM bubble says **CHEATS** in red (Mega Hack style). Safe Mode itself is a row in the Hacks tab, so turning it off is a deliberate, searchable action.
 
 ## Mobile & PC
 - **PC:** keybinds for everything, hidden during gameplay.

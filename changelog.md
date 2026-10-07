@@ -1,3 +1,35 @@
+# v2.7.0
+The biggest feature drop yet: 18 new settings, a searchable Hacks tab and a new hook layer (`gamehacks.cpp`).
+
+## New hacks
+- **Search bar in the Hacks tab** - filters every row by name or description. The whole tab is now generated from one row table, and clicks update rows in place: scroll position and search focus survive.
+- **All Passable (experimental)** - fall straight through blocks and solids; hazards still kill (pair with noclip for full ghost mode).
+- **Jump Hack (infinite jumps)** - hold jump mid-air to keep re-jumping and hover upward.
+- **Physics Bypass (experimental)** - physics runs at a fixed 240 ticks/s regardless of your monitor FPS (CBF/xdBot style). Composes with speedhack; below ~15 render FPS the game slows down instead of skipping (spiral guard).
+- **Free Attempts** - the on-screen attempt counter stays at 1 (cosmetic; your real stats are untouched).
+- **Force Platformer (experimental)** - play ANY level in platformer mode; the shared level object is restored when you quit.
+- **Auto Practice Mode** - practice mode turns itself on when a level starts.
+- **Practice Music Bypass** - checkpoint respawns stop restarting/resyncing the song.
+- **Hide Pause Menu** - pause closes itself after 0.8 s (anti-rest); it never closes while the GDMenu panel is open.
+- **Audio Pitch Shift** (0.25x-4x) - pitch the music independently of game speed; combines with Sync Music With Speedhack.
+
+## Visual cleanup
+- **No Particles** (level-spawned particle objects; death effects stay), **No Pulse** (pulse triggers leave colours untouched), **No Wave Trail**.
+- **Unlock Icons** - every icon looks unlocked in the garage (client-side cosmetic; server-side items untouched).
+- **Player Trail now rolls**: new **Trail Length** setting (1-60 s, default 20). The trail rotates through chunk draw-nodes instead of wiping at a hard segment cap - steady length, no flicker, no redraw cost.
+
+## HUD (still optional, still off by default)
+- **Best Run** (session best % on the current level), **CPS** (jump clicks per wall-clock second), **Run From** (the % your current run started at - covers start pos and practice checkpoints), **Percent Decimals** (1-3).
+- **Noclip accuracy fixed**: stats no longer count CBS half-ticks, which used to dilute accuracy towards 100% whenever Click Between Steps was on.
+
+## Safety
+- The new gameplay-affecting hacks (All Passable, Jump Hack, Physics Bypass, Force Platformer) all feed **Safe Mode** and the red **Cheat Indicator**, exactly like the old ones.
+
+## Known limits (honest list)
+- No Particles hides *level* particle objects only - the death explosion is a different system.
+- No Pulse passes colours through untouched; HSV-mode pulses that animate outside the colour callback may still move.
+- Copy Hack, No Short Numbers, custom wave-trail colour, portal lighting / mirror toggles, auto song download and show-trajectory have no clean hook point in the 2.2081 bindings - skipped rather than half-broken.
+
 # v2.6.0
 The Mega Hack / Eclipse feature drop + always-on attempt replay.
 

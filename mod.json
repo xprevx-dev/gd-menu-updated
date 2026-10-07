@@ -8,9 +8,9 @@
 	},
 	"id": "cyber39dreamgd.gdmenu",
 	"name": "GDMenu",
-	"version": "v2.6.0",
+	"version": "v2.7.0",
 	"developer": "Cyber39DreamGD",
-	"description": "Bot (GDR2 / .gdbot, resume where you left off), always-on attempt clips (watch/save your last runs), frame stepper, noclip (+limits, per player), speedhack (+music sync), hitboxes, start-pos switcher, quick respawn, CBS/CBF bot compatibility, optional in-game HUD.",
+	"description": "Bot (GDR2 / .gdbot, resume where you left off), always-on attempt clips (watch/save your last runs), frame stepper, searchable hacks tab, noclip (+limits, per player), speedhack (+music sync), pitch shift, physics bypass, all passable, jump hack, force platformer, free attempts, auto practice, practice music bypass, no particles/pulse/wave trail, unlock icons, hitboxes, start-pos switcher, quick respawn, hide pause, CBS/CBF bot compatibility, optional in-game HUD (FPS, CPS, best run, run-from, accurate noclip stats).",
 	"dependencies": {
 		"geode.node-ids": ">=v1.23.3"
 	},
@@ -296,6 +296,120 @@
 			"default": false,
 			"name": "HUD: Level Time",
 			"description": "Time since the attempt started (physics ticks / 240)."
+		},
+		"all-passable": {
+			"type": "bool",
+			"default": false,
+			"name": "All Passable (Experimental)",
+			"description": "Fall straight through blocks and solids - hazards still kill you (pair with noclip for full ghost mode). Counts as a cheat for Safe Mode. Experimental: platformer/spider behaviour may be odd."
+		},
+		"jump-hack": {
+			"type": "bool",
+			"default": false,
+			"name": "Jump Hack (Infinite Jumps)",
+			"description": "Hold jump in mid-air to keep re-jumping and hover upward (Mega Hack style). Counts as a cheat for Safe Mode."
+		},
+		"physics-bypass": {
+			"type": "bool",
+			"default": false,
+			"name": "Physics Bypass (Experimental)",
+			"description": "Run physics at a fixed 240 ticks per second regardless of your monitor FPS (CBF / xdBot style bypass). Below ~15 render FPS the game slows down instead of skipping frames. Counts as a cheat for Safe Mode."
+		},
+		"free-attempts": {
+			"type": "bool",
+			"default": false,
+			"name": "Free Attempts",
+			"description": "The on-screen attempt counter stays at 1. Cosmetic only - the level's real saved attempt count is untouched."
+		},
+		"force-platformer": {
+			"type": "bool",
+			"default": false,
+			"name": "Force Platformer (Experimental)",
+			"description": "Play ANY level in platformer mode (hold-up gravity, platformer physics). The change is restored when you quit the level; restart the attempt after toggling. Counts as a cheat for Safe Mode."
+		},
+		"auto-practice": {
+			"type": "bool",
+			"default": false,
+			"name": "Auto Practice Mode",
+			"description": "Automatically enter practice mode when a level starts (same button path as the pause menu)."
+		},
+		"practice-music-bypass": {
+			"type": "bool",
+			"default": false,
+			"name": "Practice Music Bypass",
+			"description": "Checkpoint respawns in practice mode don't restart/resync the song - the music keeps flowing uninterrupted."
+		},
+		"hide-pause": {
+			"type": "bool",
+			"default": false,
+			"name": "Hide Pause Menu",
+			"description": "The pause menu closes itself after 0.8s (anti-rest). You can still click the GDM bubble in that window; if the GDMenu panel is open it will never auto-close. Off by default."
+		},
+		"no-particles": {
+			"type": "bool",
+			"default": false,
+			"name": "No Particles",
+			"description": "Hide the particle objects levels spawn (fires, rain, ambient effects...). Applies to particles spawned after you turn it on; player death effects stay."
+		},
+		"no-pulse": {
+			"type": "bool",
+			"default": false,
+			"name": "No Pulse",
+			"description": "Pulse triggers leave colours untouched - no pulsing background/objects. Great for visibility while practising hard wave sections."
+		},
+		"no-wave-trail": {
+			"type": "bool",
+			"default": false,
+			"name": "No Wave Trail",
+			"description": "Hide the wave's trail streak in every gamemode."
+		},
+		"unlock-icons": {
+			"type": "bool",
+			"default": false,
+			"name": "Unlock Icons",
+			"description": "Every icon appears unlocked in the garage. Client-side cosmetic only - server-side items (chests, shop, Gauntlet rewards) are untouched."
+		},
+		"audio-pitch": {
+			"type": "float",
+			"default": 1.0,
+			"min": 0.25,
+			"max": 4.0,
+			"name": "Audio Pitch Shift",
+			"description": "Pitch the music up or down independently of game speed (1.00x = normal). Combines with Sync Music With Speedhack."
+		},
+		"trail-length": {
+			"type": "int",
+			"default": 20,
+			"min": 1,
+			"max": 60,
+			"name": "Trail Length (Seconds)",
+			"description": "How many seconds of the Player Trail stay visible. The trail rolls smoothly - no flicker, no redraw cost."
+		},
+		"hud-percent-decimals": {
+			"type": "int",
+			"default": 1,
+			"min": 1,
+			"max": 3,
+			"name": "HUD: Percent Decimals",
+			"description": "Decimal places for the HUD percent readout (2.207-style precision)."
+		},
+		"hud-show-best": {
+			"type": "bool",
+			"default": false,
+			"name": "HUD: Best Run",
+			"description": "Show your best percent this session on the current level (resets when you switch levels)."
+		},
+		"hud-show-cps": {
+			"type": "bool",
+			"default": false,
+			"name": "HUD: CPS",
+			"description": "Show jump clicks per second (measured on the wall clock, counts bot inputs while it plays)."
+		},
+		"hud-show-runfrom": {
+			"type": "bool",
+			"default": false,
+			"name": "HUD: Run From",
+			"description": "Show the percent your current run started from (start position / practice checkpoint)."
 		}
 	}
 }
