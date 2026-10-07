@@ -199,24 +199,21 @@ bool clips::watch(size_t back) {
 	return bot::startPlayback();
 }
 
-bool clips::save(size_t back) {
-	auto* c = s_ring.newest(back);
-	auto pl = PlayLayer::get();
-	if (!c || !pl) return false;
-	if (c->inputs.empty()) { notify("That clip has no inputs", NotificationIcon::Warning); return false; }
-
+// Export one clip as a standard .gdr2 into the replay library (+ Eclipse copy).
+// Shared by Clips-tab Save (finished clips) and Bot-tab Save Attempt (live buffer).
+static bool exportClip(PlayLayer* pl, gdm::Clip const& c) {
 	gdm::GDMReplay r;
 	r.author = std::string(GJAccountManager::get()->m_username);
-	r.description = c->completed ? "Completed attempt (GDMenu clip)"
-	                             : fmt::format("Attempt clip - reached {:.1f}%", c->percent);
+	r.description = c.completed ? "Completed attempt (GDMenu clip)"
+	                            : fmt::format("Attempt clip - reached {:.1f}%", c.percent);
 	r.gameVersion = GEODE_COMP_GD_VERSION;
 	r.framerate = 240.0;
-	r.levelInfo.id = c->levelID;
-	r.levelInfo.name = c->levelName;
+	r.levelInfo.id = c.levelID;
+	r.levelInfo.name = c.levelName;
 	r.platformer = pl->m_level->isPlatformer();
 	r.ldm = pl->m_level->m_lowDetailModeToggled;
 	uint64_t last = 0;
-	for (auto& i : c->inputs) {
+	for (auto& i : c.inputs) {
 		if (!r.platformer && i.button != 1) continue; // GDR2 can't express left/right here
 		// no per-input physics in clips: NaN tells readers (and our own loader) to skip fixes
 		r.inputs.emplace_back((uint64_t)i.frame, (uint8_t)i.button, i.player2, i.down, NAN, NAN, 0.f, 0.f, 0.f);
@@ -230,7 +227,7 @@ bool clips::save(size_t back) {
 	if (data.isErr()) { notify("Save failed: " + data.unwrapErr(), NotificationIcon::Error); return false; }
 	auto& bytes = data.unwrap();
 
-	std::string base = gdm::sanitizeFileName(fmt::format("{} a{} {:.0f}pct", c->levelName, c->attempt, c->percent));
+	std::string base = gdm::sanitizeFileName(fmt::format("{} a{} {:.0f}pct", c.levelName, c.attempt, c.percent));
 	if (base.empty()) base = "clip";
 	std::string name = base;
 	for (int n = 2; replays::exists(name, ".gdr2"); n++) name = fmt::format("{} ({})", base, n);
@@ -255,6 +252,31 @@ bool clips::save(size_t back) {
 	}
 	notify("Saved " + name + ".gdr2", NotificationIcon::Success);
 	return true;
+}
+
+bool clips::save(size_t back) {
+	auto* c = s_ring.newest(back);
+	auto pl = PlayLayer::get();
+	if (!c || !pl) return false;
+	if (c->inputs.empty()) { notify("That clip has no inputs", NotificationIcon::Warning); return false; }
+	return exportClip(pl, *c);
+}
+
+bool clips::saveCurrent() {
+	auto pl = PlayLayer::get();
+	if (!pl) { notify("Open a level first", NotificationIcon::Warning); return false; }
+	// the live attempt buffer: works MID-RUN from the pause menu ("save my 63% so far").
+	// Snapshot metadata only - the attempt itself keeps recording, nothing is finalized.
+	if (s_openValid && !s_open.inputs.empty()) {
+		gdm::Clip snap = s_open; // copies the input list (a few KB, once per button press)
+		snap.percent = std::max(snap.percent, pl->getCurrentPercent());
+		snap.frames = (uint32_t)pl->m_gameState.m_currentProgress;
+		snap.endedAt = now();
+		return exportClip(pl, snap);
+	}
+	if (auto* c = s_ring.newest(0)) return exportClip(pl, *c); // most recent finished attempt
+	notify("No attempt recorded yet - play (and press something) first", NotificationIcon::Warning);
+	return false;
 }
 
 void clips::remove(size_t back) { s_ring.removeNewest(back); }

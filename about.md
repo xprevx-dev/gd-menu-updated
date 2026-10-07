@@ -14,6 +14,7 @@ A **replay bot** and practice toolkit for Geometry Dash, made for **both PC and 
 ## <cy>Attempt Clips</c>
 - GDMenu **records every attempt, all the time** - inputs only, so it costs zero performance.
 - **Clips tab**: your last runs with % / time / inputs / badges. **Watch** replays one live through the bot, **Save** keeps it as a standard <cg>.gdr2</c>.
+- **Save Attempt** (Bot tab): exports the attempt you're in *right now* as a <cg>.gdr2</c> - even mid-run from the pause menu ("save my 63% so far").
 - Keeps the last N attempts (default 5, 0 = off) in a memory-capped ring - oldest gets evicted first.
 
 ## <cy>Tools & Hacks</c>

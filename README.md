@@ -8,7 +8,7 @@ Nothing is shown while you play (unless you enable the HUD). **Pause** and tap t
 
 | Tab | What's inside |
 |---|---|
-| **Bot** | Status, Record / Play / Save Bot, **Resume session**, and the **Sessions** manager (every saved resume point, per-level delete, clear all) |
+| **Bot** | Status, Record / Play / Save Bot, **Save Attempt** (the run you're in right now → `.gdr2`, even mid-attempt), **Resume session**, and the **Sessions** manager (every saved resume point, per-level delete, clear all) |
 | **Bots** | Your replay library: search, sort (name / newest / inputs), Load / Rename / Delete, Open Folder. Shows inputs, length, level, size and whether a file carries physics data |
 | **Clips** | **Always-on attempt recorder**: your last N attempts with % / time / inputs - **Watch** one replay live, **Save** it as `.gdr2`, or delete it |
 | **Hacks** | Noclip (+ per-player, hit & accuracy limits), Show Hitboxes (+ on death), Speedhack (+ music sync), Quick Respawn, Player Trail, CBS/CBF bot compatibility, Cheat Indicator (scrolls) |

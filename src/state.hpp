@@ -124,6 +124,8 @@ namespace clips {
 	// UI actions (Clips tab)
 	bool watch(size_t back);              // load into the bot + play it back ("the video")
 	bool save(size_t back);               // export as .gdr2 into the replay library
+	bool saveCurrent();                   // export the LIVE attempt buffer (Bot tab button);
+	                                      // falls back to the most recent finished clip
 	void remove(size_t back);
 	void clear();
 }

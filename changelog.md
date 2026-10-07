@@ -4,6 +4,7 @@ The Mega Hack / Eclipse feature drop + always-on attempt replay.
 ## Always-on attempt clips - "show me that run again"
 - **GDMenu now records every attempt, all the time** (new **Clips** tab). A clip stores *input events only* - nothing runs per tick, so recording costs no performance and never touches your physics.
 - **Watch** replays any of your last attempts live through the bot engine - your run, reproduced on screen. **Save** exports it as a standard `.gdr2` (+ Eclipse copy), **X** deletes it.
+- **Save Attempt** (Bot tab): exports the attempt you're in *right now* - works mid-run from the pause menu ("save my 63% so far"), falls back to your most recent finished attempt.
 - Keeps the last **N attempts** (default 5, up to 50, 0 = off - adjustable right in the Clips tab). The ring is also memory-capped (32 MB) and evicts oldest-first; its logic is Geode-free and covered by **41 new host-side unit tests** (CI, incl. ASan/UBSan).
 - Clips know their context: attempt number, % reached, duration, input count, practice mode, a green **COMPLETE** badge - and a **CBS/CBF!** flag when sub-tick inputs were possible (those can drift <1 tick on replay; no tick-based bot can do better).
 - Practice clips survive checkpoint respawns (inputs after the respawn point are trimmed, same rule as bot recording); quitting mid-attempt keeps the clip.

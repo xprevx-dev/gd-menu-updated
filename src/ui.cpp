@@ -596,9 +596,21 @@ protected:
 
 		// manager for every saved resume point on disk (all levels)
 		auto sessions = button(fmt::format("Sessions ({})", bot::listSessions().size()), "GJ_button_04.png",
-			this, menu_selector(GDMenuPopup::onSessions), 110, 0.6f);
-		sessions->setPosition({ W / 2, 95.f });
+			this, menu_selector(GDMenuPopup::onSessions), 90, 0.58f);
+		sessions->setPosition({ W * 0.28f, 95.f });
 		menu->addChild(sessions);
+
+		// save the attempt you're in RIGHT NOW (live clip buffer - works mid-run from the
+		// pause menu); falls back to your most recent finished attempt
+		auto saveAttempt = button("Save Attempt", "GJ_button_05.png",
+			this, menu_selector(GDMenuPopup::onSaveAttempt), 90, 0.58f);
+		saveAttempt->setPosition({ W * 0.73f, 95.f });
+		menu->addChild(saveAttempt);
+	}
+
+	void onSaveAttempt(CCObject*) {
+		if (!needLevel()) return;
+		clips::saveCurrent();
 	}
 
 	void onLoop(CCObject*) {
