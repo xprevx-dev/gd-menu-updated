@@ -155,7 +155,12 @@ inline bool readSession(std::istream& f, Session& out) {
 }
 
 // ---------------------------------------------------------------- per-tick fixes
+// Layout: "GDMF" u32 version, u32 count, then count *
+//   { i32 frame, u8 hasP2, 2 * (f32 x, f32 y, f32 rot, f64 xVel, f64 yVel) }
+// Files written before v2.5.0 (raw count, no magic) are still accepted.
 inline void writeFixes(std::ostream& f, std::vector<FrameFix> const& fixes) {
+	f.write("GDMF", 4);
+	detail::writePod(f, uint32_t(1));
 	detail::writePod(f, uint32_t(fixes.size()));
 	for (auto& x : fixes) {
 		detail::writePod(f, int32_t(x.frame));
@@ -172,6 +177,18 @@ inline void writeFixes(std::ostream& f, std::vector<FrameFix> const& fixes) {
 
 inline bool readFixes(std::istream& f, std::vector<FrameFix>& fixes) {
 	fixes.clear();
+	char magic[4];
+	f.read(magic, 4);
+	if (!f) return false;
+	if (std::string_view(magic, 4) != "GDMF") {
+		// pre-v2.5 legacy file: starts straight with the count
+		f.clear();
+		f.seekg(0);
+	}
+	else {
+		uint32_t ver = 0;
+		if (!detail::readPod(f, ver)) return false;
+	}
 	uint32_t n = 0;
 	if (!detail::readPod(f, n)) return false;
 	uint64_t count = std::min<uint64_t>(n, detail::remaining(f) / detail::FIX_RECORD);

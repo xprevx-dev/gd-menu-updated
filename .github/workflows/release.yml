@@ -16,6 +16,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run core tests
         run: bash tests/run_tests.sh
+      - name: Run core tests under ASan/UBSan
+        run: SANITIZE=1 bash tests/run_tests.sh
 
   build:
     strategy:

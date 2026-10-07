@@ -21,7 +21,12 @@ fi
 
 mkdir -p build
 CXX="${CXX:-g++}"
-"$CXX" -std=c++23 -O1 -g -Wall -Wextra -Wno-unused-parameter \
+EXTRA=""
+# SANITIZE=1 bash tests/run_tests.sh  -> ASan + UBSan (used by CI)
+if [ "${SANITIZE:-0}" = "1" ]; then
+    EXTRA="-fsanitize=address,undefined -fno-omit-frame-pointer"
+fi
+"$CXX" -std=c++23 -O1 -g -Wall -Wextra -Wno-unused-parameter $EXTRA \
     -I src/core -I "$GDR_INC" \
     tests/test_replay_io.cpp -o build/test_replay_io
 ./build/test_replay_io

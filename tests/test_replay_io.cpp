@@ -259,18 +259,59 @@ static void testStall() {
 	CHECK(gdm::prevalidateGdr(std::span<uint8_t>(owned)));
 }
 
+// pre-v2.5 fix files had no magic: raw count then records. Must still load.
+static void testFixesLegacy() {
+	std::printf("fixes: legacy (no magic) files still load\n");
+	std::stringstream ss;
+	std::vector<FrameFix> in(3);
+	for (int i = 0; i < 3; i++) { in[i].frame = i; in[i].p1.x = (float)i; }
+	pod<uint32_t>(ss, (uint32_t)in.size());
+	for (auto& x : in) {
+		pod<int32_t>(ss, x.frame); pod<uint8_t>(ss, 0);
+		for (auto* p : { &x.p1, &x.p2 }) {
+			pod<float>(ss, p->x); pod<float>(ss, p->y); pod<float>(ss, p->rot);
+			pod<double>(ss, p->xVel); pod<double>(ss, p->yVel);
+		}
+	}
+	std::vector<FrameFix> out;
+	CHECK(gdm::readFixes(ss, out));
+	CHECK(out.size() == 3);
+	CHECK(out.size() == 3 && out[2].p1.x == 2.f);
+}
+
+// sessions and fixes readers must survive arbitrary bytes without throwing/hanging
+static void testFuzzSessions() {
+	std::printf("sessions/fixes: fuzz 4000 random buffers\n");
+	uint64_t s = 0x9E3779B97F4A7C15ull;
+	auto rnd = [&] { s = s * 6364136223846793005ull + 1442695040888963407ull; return (uint8_t)(s >> 33); };
+	for (int iter = 0; iter < 4000; iter++) {
+		std::string buf = (iter % 2 == 0) ? "GDMS" : "GDMF";
+		size_t n = rnd() % 160;
+		for (size_t i = 0; i < n; i++) buf.push_back((char)rnd());
+		std::stringstream ss(buf);
+		gdm::Session ses;
+		gdm::readSession(ss, ses);
+		std::stringstream ss2(buf);
+		std::vector<FrameFix> fx;
+		gdm::readFixes(ss2, fx);
+	}
+	CHECK(true);
+}
+
 int main() {
 	testSessionRoundTrip();
 	testSessionForgedCount();
 	testSessionTruncated();
 	testSessionV2Compat();
 	testFixes();
+	testFixesLegacy();
 	testSanitize();
 	testReplayRoundTrip();
 	testReplayForgedFixCount();
 	testReplayTruncated();
 	testStall();
 	testFuzz();
+	testFuzzSessions();
 	std::printf("\n%d checks, %d failures\n", g_checks, g_fails);
 	return g_fails == 0 ? 0 : 1;
 }

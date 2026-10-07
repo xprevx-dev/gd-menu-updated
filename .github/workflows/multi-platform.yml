@@ -18,6 +18,11 @@ jobs:
       - name: Run core tests
         run: bash tests/run_tests.sh
 
+      # Same suite under AddressSanitizer + UBSan: proves the parsers are memory-safe
+      # on forged/truncated input, not just "didn't crash this time".
+      - name: Run core tests under ASan/UBSan
+        run: SANITIZE=1 bash tests/run_tests.sh
+
   build:
     strategy:
       fail-fast: false
