@@ -1,8 +1,11 @@
 // Optional in-game HUD (Settings > In-Game HUD, OFF by default).
 // GDMenu is deliberately invisible while you play; this is the opt-in exception:
-// a tiny corner overlay with bot state, frame, percent, speed and noclip accuracy.
+// a tiny corner overlay with bot state, frame, percent, speed, inputs, noclip accuracy
+// and Mega Hack style counters (FPS / attempts / jumps / level time).
 #include "state.hpp"
 #include <Geode/modify/PlayLayer.hpp>
+#include <chrono>
+#include <cmath>
 
 bool hud::enabled()      { return Mod::get()->getSettingValue<bool>("hud-enabled"); }
 bool hud::showState()    { return Mod::get()->getSettingValue<bool>("hud-show-state"); }
@@ -11,7 +14,7 @@ bool hud::showPercent()  { return Mod::get()->getSettingValue<bool>("hud-show-pe
 bool hud::showSpeed()    { return Mod::get()->getSettingValue<bool>("hud-show-speed"); }
 
 namespace {
-	constexpr int MAX_LINES = 4;
+	constexpr int MAX_LINES = 5; // state, info, inputs, accuracy, counters
 
 	struct Line {
 		std::string text;
@@ -40,7 +43,14 @@ namespace {
 class $modify(HudPlayLayer, PlayLayer) {
 	struct Fields {
 		HudConfig config{};
-		CCLabelBMFont* lines[MAX_LINES] = { nullptr, nullptr, nullptr };
+		CCLabelBMFont* lines[MAX_LINES] = {};
+		// fps meter: wall clock between postUpdate calls (the game's dt is scaled by
+		// speedhack / resume fast-forward, so it can't be used to count real frames)
+		bool clockInit = false;
+		std::chrono::steady_clock::time_point lastClock{};
+		double fpsAcc = 0.0;
+		int fpsCount = 0;
+		int fps = 0;
 	};
 
 	bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
@@ -118,6 +128,37 @@ class $modify(HudPlayLayer, PlayLayer) {
 			float acc = g_hacks.accTicks ? 100.f * (1.f - (float)g_hacks.accDeadTicks / g_hacks.accTicks) : 100.f;
 			ls[n++] = { fmt::format("{:.2f}%  {} deaths", acc, g_hacks.accDeaths),
 				acc >= 100.f ? ccColor3B{ 140, 255, 140 } : acc >= 90.f ? ccColor3B{ 255, 230, 120 } : ccColor3B{ 255, 120, 120 } };
+		}
+		// Mega Hack style counters (FPS / attempts / jumps / level time) on one compact line
+		{
+			bool fOn = Mod::get()->getSettingValue<bool>("hud-show-fps");
+			bool aOn = Mod::get()->getSettingValue<bool>("hud-show-attempts");
+			bool jOn = Mod::get()->getSettingValue<bool>("hud-show-jumps");
+			bool tOn = Mod::get()->getSettingValue<bool>("hud-show-time");
+			if (fOn || aOn || jOn || tOn) {
+				auto t = std::chrono::steady_clock::now();
+				if (m_fields->clockInit) {
+					double d = std::chrono::duration<double>(t - m_fields->lastClock).count();
+					if (d > 0.0) { m_fields->fpsAcc += d; m_fields->fpsCount++; }
+				}
+				else m_fields->clockInit = true;
+				m_fields->lastClock = t;
+				if (m_fields->fpsAcc >= 0.5) {
+					m_fields->fps = (int)std::lround((double)m_fields->fpsCount / m_fields->fpsAcc);
+					m_fields->fpsAcc = 0.0;
+					m_fields->fpsCount = 0;
+				}
+				std::string s;
+				auto add = [&](std::string const& part) { if (!s.empty()) s += "   "; s += part; };
+				if (fOn) add(fmt::format("FPS {}", m_fields->fps));
+				if (aOn) add(fmt::format("ATT {}", m_attempts));
+				if (jOn) add(fmt::format("JUMP {}", m_jumps));
+				if (tOn) {
+					int sec = (int)(m_gameState.m_currentProgress / 240u);
+					add(fmt::format("TIME {}:{:02}", sec / 60, sec % 60));
+				}
+				ls[n++] = { s, { 190, 210, 255 } };
+			}
 		}
 		layoutHud(n);
 		for (int i = 0; i < MAX_LINES; i++) {

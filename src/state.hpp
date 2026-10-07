@@ -8,8 +8,14 @@
 // Plain-data replay types + all serialization live in the Geode-free core so they
 // can be unit-tested on a desktop compiler (see tests/).
 #include "core/replay_io.hpp"
+#include "core/clips.hpp"
 
 using namespace geode::prelude;
+
+// binding classes referenced in the API below (full definitions arrive through
+// <Geode/Geode.hpp> / the per-TU modify includes)
+class PlayLayer;
+class GJBaseGameLayer;
 
 // ---------------------------------------------------------------- bot
 enum class BotState { Idle, Recording, Playing, Resuming };
@@ -95,6 +101,31 @@ namespace hud {
 	bool showFrame();
 	bool showPercent();
 	bool showSpeed();
+}
+
+// ---------------------------------------------------------------- clips
+// Always-on attempt recording (inputs only -> no measurable cost). Implementation in
+// clips.cpp; the ring buffer itself is core/clips.hpp (Geode-free, unit-tested).
+namespace clips {
+	bool enabled();                       // clips-count setting > 0
+	size_t keep();                        // how many attempts the ring keeps (0..50)
+	size_t count();                       // finalized clips for the current level
+	gdm::Clip const* newest(size_t back); // 0 = most recent
+
+	// capture lifecycle - called from the existing hooks, all no-ops when disabled
+	void onLevelEnter(PlayLayer* pl);     // clears the ring when the level changes
+	void onAttemptStart(PlayLayer* pl);   // resetLevel while idle (practice respawn = trim)
+	void onInput(GJBaseGameLayer* gl, int frame, int button, bool down, bool player2);
+	void onDeath(PlayLayer* pl, float percent);
+	void onComplete(PlayLayer* pl);
+	void onQuit(PlayLayer* pl);
+	void onBotActive(bool active);        // finalize the open clip when a bot takes over
+
+	// UI actions (Clips tab)
+	bool watch(size_t back);              // load into the bot + play it back ("the video")
+	bool save(size_t back);               // export as .gdr2 into the replay library
+	void remove(size_t back);
+	void clear();
 }
 
 namespace replays {

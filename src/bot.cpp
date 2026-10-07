@@ -28,6 +28,9 @@ namespace {
 	void updateCBF(bool botActive) {
 		auto cbf = Loader::get()->getLoadedMod(CBF_ID);
 		if (!cbf) return;
+		// CBF renamed settings across versions; only touch the key when it really exists,
+		// never guess (a wrong key would silently restore "false" over the user's choice)
+		if (!cbf->getSetting("soft-toggle")) return;
 		if (botActive && !s_cbfTouched) {
 			s_cbfPrev = cbf->getSettingValue<bool>("soft-toggle");
 			cbf->setSettingValue<bool>("soft-toggle", true);
@@ -39,9 +42,40 @@ namespace {
 		}
 	}
 
-	void setState(BotState st) {
+	// Click Between Steps (vanilla 2.208) lands inputs on half-steps between ticks; a
+	// tick-based replay can't reproduce that, so the layer's CBS flag is forced off while
+	// the bot drives and restored afterwards - same policy as CBF above (Eclipse does both).
+	bool s_cbsTouched = false;
+	bool s_cbsPrev = false;
+	GJBaseGameLayer* s_cbsLayer = nullptr;
+
+	void manageCBS(bool botActive, GJBaseGameLayer* gl) {
+		if (botActive && Mod::get()->getSettingValue<bool>("manage-cbs")) {
+			if (!s_cbsTouched && gl) {
+				s_cbsLayer = gl;
+				s_cbsPrev = gl->m_clickBetweenSteps;
+				gl->m_clickBetweenSteps = false;
+				s_cbsTouched = true;
+			}
+		}
+		else if (s_cbsTouched) {
+			// restore even if the setting was turned off mid-run, but only on the same
+			// layer (a stale pointer from a previous level is never written to)
+			if (gl && gl == s_cbsLayer) gl->m_clickBetweenSteps = s_cbsPrev;
+			s_cbsTouched = false;
+			s_cbsLayer = nullptr;
+		}
+	}
+
+	void setState(BotState st, GJBaseGameLayer* gl = nullptr) {
+		if (!gl) gl = PlayLayer::get();
+		bool active = st != BotState::Idle;
+		// order matters: clips finalize (restoring their own CBS pause) BEFORE the bot's
+		// CBS management kicks in, so the two never stack paused states
+		clips::onBotActive(active);
 		g_bot.state = st;
-		updateCBF(st != BotState::Idle);
+		updateCBF(active);
+		manageCBS(active, gl);
 	}
 
 	bool isTwoPlayer(GJBaseGameLayer* gl) {
@@ -182,7 +216,7 @@ void bot::startRecording() {
 	g_bot.inputs.clear();
 	g_bot.fixes.clear();
 	g_bot.loadedName.clear();
-	setState(BotState::Recording);
+	setState(BotState::Recording, pl);
 	std::memset(g_bot.held, 0, sizeof(g_bot.held));
 	std::memset(g_bot.viewHeld, 0, sizeof(g_bot.viewHeld));
 	extras::bumpStat("recordings");
@@ -205,7 +239,7 @@ bool bot::startPlayback() {
 	if (!pl) return false;
 	if (g_bot.inputs.empty()) { notify("No bot loaded - open the Bots tab", NotificationIcon::Warning); return false; }
 	std::stable_sort(g_bot.inputs.begin(), g_bot.inputs.end(), [](auto& a, auto& b) { return a.frame < b.frame; });
-	setState(BotState::Playing);
+	setState(BotState::Playing, pl);
 	g_bot.playIndex = 0;
 	extras::bumpStat("plays");
 	pl->resetLevel();
@@ -306,7 +340,7 @@ bool bot::resumeSession() {
 		std::erase_if(g_bot.fixes, [](FrameFix const& x) { return x.frame > g_bot.resumeFrame; });
 	}
 	g_bot.fixIndex = 0;
-	setState(BotState::Resuming);
+	setState(BotState::Resuming, pl);
 	g_bot.playIndex = 0;
 	extras::bumpStat("resumes");
 	bot::setTimeScale((float)Mod::get()->getSettingValue<double>("resume-speed"));
@@ -498,6 +532,10 @@ class $modify(BotGameLayer, GJBaseGameLayer) {
 		if (button >= 1 && button <= 3 &&
 			(g_bot.botInput || g_bot.state == BotState::Idle || g_bot.state == BotState::Recording))
 			g_bot.viewHeld[player2][button] = down;
+		// passive attempt clips: every attempt is recorded while the bot isn't driving
+		// (input events only - nothing happens per tick, so this costs no performance)
+		if (!g_bot.botInput && g_bot.state == BotState::Idle)
+			clips::onInput(this, (int)m_gameState.m_currentProgress, button, down, player2);
 		BotInput captured = makeInput(this, (int)m_gameState.m_currentProgress, button, down, player2);
 
 		GJBaseGameLayer::handleButton(down, button, isPlayer1);
@@ -572,7 +610,7 @@ class $modify(BotGameLayer, GJBaseGameLayer) {
 
 		if (g_bot.state == BotState::Resuming && frame >= g_bot.resumeFrame) {
 			// reached where you left off: hand control back and keep recording
-			setState(BotState::Recording);
+			setState(BotState::Recording, this);
 			bot::setTimeScale(1.f);
 			releaseAll(this);
 			// re-sync "held" with what the macro was holding so the next input is recorded correctly
@@ -591,7 +629,7 @@ class $modify(BotPlayLayer, PlayLayer) {
 	struct Fields { float deadTime = 0.f; };
 
 	bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
-		setState(BotState::Idle);
+		setState(BotState::Idle, this);
 		g_bot.playIndex = 0;
 		g_bot.stepper = false;
 		g_bot.pendingSteps = 0;
@@ -606,6 +644,7 @@ class $modify(BotPlayLayer, PlayLayer) {
 			g_bot.loadedName.clear();
 		}
 		g_bot.levelID = id;
+		clips::onLevelEnter(this);
 		if (bot::hasSession(id))
 			notify("Saved bot session found - Pause > GDMenu > Resume");
 		return true;
@@ -615,6 +654,10 @@ class $modify(BotPlayLayer, PlayLayer) {
 		PlayLayer::resetLevel();
 		practice::applyPending(this); // exact physics at the checkpoint (practice fix)
 		int frame = (int)m_gameState.m_currentProgress;
+
+		// passive attempt clips: a new attempt begins here (practice checkpoint respawns
+		// trim the open clip instead - clips.cpp decides)
+		if (g_bot.state == BotState::Idle) clips::onAttemptStart(this);
 
 		if (g_bot.state == BotState::Recording) {
 			if (m_player1) m_player1->m_isDashing = false; // dash orbs otherwise carry over (Eclipse does this too)
@@ -653,15 +696,22 @@ class $modify(BotPlayLayer, PlayLayer) {
 	}
 
 	// "Loop Playback": when the bot dies, restart the attempt automatically so you can
-	// watch it run over and over. Resets before GD's death popup appears; if the popup
-	// wins the race (m_isPaused), the normal retry path still resumes playback correctly.
+	// watch it run over and over. "Quick Respawn" does the same for YOUR attempts
+	// (Mega Hack style respawn time, 0 = off). Resets before GD's death popup appears;
+	// if the popup wins the race (m_isPaused), the normal retry path still works.
 	void postUpdate(float dt) {
 		PlayLayer::postUpdate(dt);
-		bool looping = g_bot.state == BotState::Playing && !m_isPaused &&
-		               Mod::get()->getSettingValue<bool>("loop-playback");
-		if (looping && m_player1 && m_player1->m_isDead) {
+		float delay = 0.f;
+		if (g_bot.state == BotState::Playing && !m_isPaused &&
+		    Mod::get()->getSettingValue<bool>("loop-playback")) {
+			delay = 0.8f;
+		}
+		else if (g_bot.state == BotState::Idle && !m_isPaused && !m_isPracticeMode) {
+			delay = (float)Mod::get()->getSettingValue<double>("quick-respawn");
+		}
+		if (delay > 0.f && m_player1 && m_player1->m_isDead) {
 			m_fields->deadTime += dt;
-			if (m_fields->deadTime > 0.8f) {
+			if (m_fields->deadTime > delay) {
 				m_fields->deadTime = 0.f;
 				this->resetLevel();
 			}
@@ -670,16 +720,17 @@ class $modify(BotPlayLayer, PlayLayer) {
 	}
 
 	void levelComplete() {
+		clips::onComplete(this); // finalize the passive clip (no-op while the bot drove)
 		PlayLayer::levelComplete();
 		if (g_bot.state == BotState::Recording) {
 			bot::saveSession();
-			setState(BotState::Idle);
+			setState(BotState::Idle, this);
 			if (Mod::get()->getSettingValue<bool>("autosave-bot"))
 				replays::save(fmt::format("{} {}", std::string(m_level->m_levelName), timestamp()), ".gdr2", false);
 			notify("Level complete! Pause > GDMenu > Save Bot to keep it", NotificationIcon::Success);
 		}
 		else if (g_bot.state == BotState::Playing || g_bot.state == BotState::Resuming) {
-			setState(BotState::Idle);
+			setState(BotState::Idle, this);
 			bot::setTimeScale(1.f);
 		}
 	}
@@ -687,7 +738,8 @@ class $modify(BotPlayLayer, PlayLayer) {
 	void onQuit() {
 		// save where you were so you can come back and continue
 		if (g_bot.state == BotState::Recording) bot::saveSession();
-		setState(BotState::Idle);
+		setState(BotState::Idle, this);
+		clips::onQuit(this); // keep the unfinished attempt as a clip
 		g_bot.stepper = false;
 		bot::setTimeScale(1.f);
 		PlayLayer::onQuit();

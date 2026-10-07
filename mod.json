@@ -8,9 +8,9 @@
 	},
 	"id": "cyber39dreamgd.gdmenu",
 	"name": "GDMenu",
-	"version": "v2.5.0",
+	"version": "v2.6.0",
 	"developer": "Cyber39DreamGD",
-	"description": "Bot (GDR2 / .gdbot, resume where you left off), frame stepper, noclip, speedhack, hitboxes, start-pos switcher, optional in-game HUD.",
+	"description": "Bot (GDR2 / .gdbot, resume where you left off), always-on attempt clips (watch/save your last runs), frame stepper, noclip (+limits, per player), speedhack (+music sync), hitboxes, start-pos switcher, quick respawn, CBS/CBF bot compatibility, optional in-game HUD.",
 	"dependencies": {
 		"geode.node-ids": ">=v1.23.3"
 	},
@@ -198,6 +198,104 @@
 			"default": true,
 			"name": "Physics Fix",
 			"description": "While recording, the player's position/speed is saved every tick; playback follows that exact path. Stops bots recorded in practice mode from dying."
+		},
+		"clips-count": {
+			"type": "int",
+			"default": 5,
+			"min": 0,
+			"max": 50,
+			"name": "Attempt Clips Kept",
+			"description": "GDMenu always records your last N attempts (inputs only - no performance cost). Pause > GDMenu > Clips: watch any of them replay live like a video, or save it as .gdr2. 0 = off."
+		},
+		"clips-pause-cbs": {
+			"type": "bool",
+			"default": false,
+			"name": "Pause CBS For Clips",
+			"description": "Force vanilla Click Between Steps off while clips record, so clip replays are frame-perfect. Off by default: your CBS choice stays untouched while you play. Clips recorded with CBS/CBF on are flagged and may drift by less than a tick on replay."
+		},
+		"manage-cbs": {
+			"type": "bool",
+			"default": true,
+			"name": "Pause CBS/CBF For Bot",
+			"description": "Click Between Steps (vanilla) and Click Between Frames (Syzzi's mod) land inputs between physics ticks, which tick-based replays can't reproduce. GDMenu pauses both while the bot records/plays and restores them afterwards (Eclipse does the same)."
+		},
+		"quick-respawn": {
+			"type": "float",
+			"default": 0.0,
+			"min": 0.0,
+			"max": 3.0,
+			"name": "Quick Respawn",
+			"description": "Automatically restart this many seconds after dying (Mega Hack style respawn time). 0 = off. Practice mode keeps vanilla checkpoint behaviour."
+		},
+		"speedhack-audio": {
+			"type": "bool",
+			"default": false,
+			"name": "Sync Music With Speedhack",
+			"description": "Pitch the song with the speedhack so music stays in sync while you play fast or slow (Eclipse / xdBot style). Restored automatically when the speedhack ends."
+		},
+		"hitboxes-on-death": {
+			"type": "bool",
+			"default": false,
+			"name": "Force Hitboxes On Death",
+			"description": "Keeps GD's 'show hitboxes on death' option forced on while this setting is on (Mega Hack style). Your vanilla option is untouched when this is off."
+		},
+		"noclip-p1": {
+			"type": "bool",
+			"default": true,
+			"name": "Noclip: Player 1",
+			"description": "Noclip protects player 1."
+		},
+		"noclip-p2": {
+			"type": "bool",
+			"default": true,
+			"name": "Noclip: Player 2",
+			"description": "Noclip protects player 2 in dual / 2-player sections. Turn off to practice one side only (Mega Hack style)."
+		},
+		"noclip-hit-limit": {
+			"type": "int",
+			"default": 0,
+			"min": 0,
+			"max": 9999,
+			"name": "Noclip Hit Limit",
+			"description": "Once noclip has saved you this many times in one attempt, hits become lethal again (Mega Hack / Eclipse noclip limits). 0 = unlimited."
+		},
+		"noclip-acc-limit": {
+			"type": "float",
+			"default": 0.0,
+			"min": 0.0,
+			"max": 100.0,
+			"name": "Noclip Accuracy Floor",
+			"description": "When your noclip accuracy drops below this percent, hits become lethal again for the rest of the attempt. 0 = off."
+		},
+		"cheat-indicator": {
+			"type": "bool",
+			"default": true,
+			"name": "Cheat Indicator",
+			"description": "The floating GDM bubble shows CHEATS in red while any hack is active (Mega Hack style), so a recording/stream never hides it."
+		},
+		"hud-show-fps": {
+			"type": "bool",
+			"default": false,
+			"name": "HUD: FPS",
+			"description": "Real frames per second (measured on the wall clock, unaffected by speedhack)."
+		},
+		"hud-show-attempts": {
+			"type": "bool",
+			"default": false,
+			"name": "HUD: Attempts",
+			"description": "Attempt counter for the current level."
+		},
+		"hud-show-jumps": {
+			"type": "bool",
+			"default": false,
+			"name": "HUD: Jumps",
+			"description": "Jumps performed this attempt."
+		},
+		"hud-show-time": {
+			"type": "bool",
+			"default": false,
+			"name": "HUD: Level Time",
+			"description": "Time since the attempt started (physics ticks / 240)."
 		}
 	}
 }

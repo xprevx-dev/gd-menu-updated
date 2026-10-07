@@ -30,3 +30,8 @@ fi
     -I src/core -I "$GDR_INC" \
     tests/test_replay_io.cpp -o build/test_replay_io
 ./build/test_replay_io
+
+"$CXX" -std=c++23 -O1 -g -Wall -Wextra -Wno-unused-parameter $EXTRA \
+    -I src/core -I "$GDR_INC" \
+    tests/test_clips.cpp -o build/test_clips
+./build/test_clips

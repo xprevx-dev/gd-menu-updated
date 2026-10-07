@@ -101,6 +101,7 @@ bool extras::loadProfile(int slot) {
 
 // ---------------------------------------------------------------- gameplay
 static bool s_autoDown = false;
+static bool s_limitHit = false; // "noclip limit reached" notification, once per attempt
 
 class $modify(ExtrasGameLayer, GJBaseGameLayer) {
 	void processCommands(float dt, bool isHalfTick, bool isLastTick) {
@@ -147,6 +148,9 @@ class $modify(ExtrasPlayLayer, PlayLayer) {
 	bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
 		if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
 		s_autoDown = false;
+		// Mega Hack's "Show Hitboxes on Death": force the vanilla option on (only when
+		// our setting is on - the user's vanilla choice is never touched otherwise)
+		if (Mod::get()->getSettingValue<bool>("hitboxes-on-death")) m_hitboxesOnDeath = true;
 		g_hacks.cheatedAttempt = extras::cheatsActive();
 		resetAccuracy();
 		auto win = CCDirector::get()->getWinSize();
@@ -165,11 +169,13 @@ class $modify(ExtrasPlayLayer, PlayLayer) {
 	void resetAccuracy() {
 		g_hacks.accTicks = g_hacks.accDeadTicks = g_hacks.accDeaths = 0;
 		g_hacks.accHitThisTick = g_hacks.accWasHit = false;
+		s_limitHit = false;
 	}
 
 	void resetLevel() {
 		PlayLayer::resetLevel();
 		s_autoDown = false;
+		if (Mod::get()->getSettingValue<bool>("hitboxes-on-death")) m_hitboxesOnDeath = true;
 		g_hacks.cheatedAttempt = extras::cheatsActive();
 		// accuracy is per run: only reset when restarting from the beginning (not on practice checkpoints)
 		if (!m_isPracticeMode || m_checkpointArray->count() == 0) resetAccuracy();
@@ -180,9 +186,28 @@ class $modify(ExtrasPlayLayer, PlayLayer) {
 	// was counted - or, worse, let a noclip player die).
 	void destroyPlayer(PlayerObject* player, GameObject* obj) {
 		if (g_hacks.noclip && obj != m_anticheatSpike) {
-			g_hacks.accHitThisTick = true; // noclip saved you this tick
-			return;
+			// per-player noclip (Mega Hack style): protect each side separately
+			bool sideOk = (player == m_player1 && Mod::get()->getSettingValue<bool>("noclip-p1"))
+			           || (player == m_player2 && Mod::get()->getSettingValue<bool>("noclip-p2"));
+			// noclip limits (Mega Hack / Eclipse): after leaning on noclip too hard,
+			// hits become lethal again for the rest of the attempt
+			int hitLimit = (int)Mod::get()->getSettingValue<int64_t>("noclip-hit-limit");
+			float accLimit = (float)Mod::get()->getSettingValue<double>("noclip-acc-limit");
+			float accNow = g_hacks.accTicks
+				? 100.f * (1.f - (float)(g_hacks.accDeadTicks + 1) / (float)(g_hacks.accTicks + 1))
+				: 100.f;
+			bool overLimit = (hitLimit > 0 && g_hacks.accDeaths >= hitLimit)
+			              || (accLimit > 0.f && accNow < accLimit);
+			if (sideOk && !overLimit) {
+				g_hacks.accHitThisTick = true; // noclip saved you this tick
+				return;
+			}
+			if (sideOk && overLimit && !s_limitHit) {
+				s_limitHit = true;
+				notify("Noclip limit reached - hits are lethal again", NotificationIcon::Warning);
+			}
 		}
+		clips::onDeath(this, this->getCurrentPercent()); // a REAL death: the clip ends here
 		if (g_hacks.safeMode && g_hacks.cheatedAttempt) {
 			bool old = m_isTestMode;
 			m_isTestMode = true;  // test mode = GD won't save a new best %

@@ -359,7 +359,7 @@ public:
 // ---------------------------------------------------------------- main panel
 class GDMenuPopup : public Popup {
 protected:
-	enum Tab { TabBot, TabBots, TabHacks, TabTools, TabMore, TabStyle, TabKeys, TabCount };
+	enum Tab { TabBot, TabBots, TabClips, TabHacks, TabTools, TabMore, TabStyle, TabKeys, TabCount };
 	static inline int s_tab = TabBot; // reopen on the last tab
 
 	PauseLayer* m_pause = nullptr;
@@ -410,8 +410,8 @@ protected:
 	void buildTabs() {
 		m_tabMenu->removeAllChildren();
 		auto size = m_mainLayer->getContentSize();
-		const char* names[TabCount] = { "Bot", "Bots", "Hacks", "Tools", "More", "Style", "Keys" };
-		float y = size.height - 62.f;
+		const char* names[TabCount] = { "Bot", "Bots", "Clips", "Hacks", "Tools", "More", "Style", "Keys" };
+		float y = size.height - 58.f;
 		for (int i = 0; i < TabCount; i++) {
 			bool on = i == s_tab;
 			auto spr = ButtonSprite::create(names[i], 70, true, "bigFont.fnt",
@@ -422,7 +422,7 @@ protected:
 			btn->setTag(i);
 			btn->setPosition({ 62.f, y });
 			m_tabMenu->addChild(btn);
-			y -= 30.f;
+			y -= 26.f; // 8 tabs: tighter pitch keeps the state label clear at the bottom
 		}
 		// recording indicator under the tabs
 		if (m_stateLabel) m_stateLabel->removeFromParent();
@@ -451,6 +451,7 @@ protected:
 		switch (tab) {
 			case TabBot:   buildBotTab(); break;
 			case TabBots:  buildBotsTab(); break;
+			case TabClips: buildClipsTab(); break;
 			case TabHacks: buildHacksTab(); break;
 			case TabTools: buildToolsTab(); break;
 			case TabKeys:  buildKeysTab(); break;
@@ -731,28 +732,187 @@ protected:
 		m_botsScroll->scrollToTop();
 	}
 
+	// ------------------------------------------------------------ Clips tab (always-on attempt recorder)
+	ScrollLayer* m_clipsScroll = nullptr;
+
+	void buildClipsTab() {
+		auto menu = contentMenu();
+		float W = m_area.width, H = m_area.height;
+		heading("Recent Attempts", H - 16.f);
+
+		size_t keep = clips::keep();
+		auto note = label(keep == 0
+				? "Clips are OFF - raise \"Keep last attempts\" below"
+				: fmt::format("Always recording (inputs only, zero lag): last {} attempt{} of this level",
+					keep, keep == 1 ? "" : "s"),
+			"chatFont.fnt", 0.55f, keep == 0 ? ccColor3B{ 255, 200, 120 } : SUBTLE);
+		note->setAnchorPoint({ 0, 0.5f });
+		fit(note, W - 100.f, 0.55f);
+		note->setPosition({ 12.f, H - 34.f });
+		m_content->addChild(note);
+		auto clr = button("Clear", "GJ_button_04.png", this, menu_selector(GDMenuPopup::onClearClips), 50, 0.55f);
+		clr->setPosition({ W - 40.f, H - 34.f });
+		menu->addChild(clr);
+
+		m_clipsScroll = ScrollLayer::create({ W - 16.f, H - 108.f });
+		m_clipsScroll->setPosition({ 8.f, 48.f });
+		m_content->addChild(m_clipsScroll);
+		rebuildClipsList();
+
+		stepperRow(menu, 28.f, "Keep last attempts", fmt::format("{}", keep),
+			{ { "-5", -5.f }, { "-1", -1.f }, { "+1", 1.f }, { "+5", 5.f } }, menu_selector(GDMenuPopup::onClipsCount));
+	}
+
+	// newest first; buttons carry the "back" index (0 = most recent clip)
+	void rebuildClipsList() {
+		if (!m_clipsScroll) return;
+		float W = m_area.width;
+		float listH = m_clipsScroll->getContentSize().height;
+		m_clipsScroll->m_contentLayer->removeAllChildren();
+		size_t n = clips::count();
+
+		float rowH = 42.f;
+		float total = std::max(listH, rowH * n + 4.f);
+		m_clipsScroll->m_contentLayer->setContentSize({ W - 16.f, total });
+
+		if (n == 0) {
+			auto none = label(clips::keep() == 0
+					? "Clips are disabled.\nRaise \"Keep last attempts\" below."
+					: "No clips yet - play an attempt\n(die or complete it) and it lands here.",
+				"chatFont.fnt", 0.65f, SUBTLE);
+			none->setAlignment(kCCTextAlignmentCenter);
+			none->setPosition({ (W - 16.f) / 2, listH / 2 });
+			m_clipsScroll->m_contentLayer->addChild(none);
+		}
+
+		auto rowMenu = CCMenu::create();
+		rowMenu->setPosition({ 0, 0 });
+		m_clipsScroll->m_contentLayer->addChild(rowMenu, 2);
+
+		float y = total - rowH / 2 - 2.f;
+		for (size_t back = 0; back < n; back++) {
+			auto c = clips::newest(back);
+			if (!c) break;
+			bool done = c->completed;
+			auto bg = card({ W - 24.f, rowH - 4.f }, done ? 100 : 60);
+			if (done) static_cast<NineSlice*>(bg)->setColor({ 20, 60, 30 });
+			bg->setPosition({ (W - 16.f) / 2, y });
+			m_clipsScroll->m_contentLayer->addChild(bg);
+
+			auto title = label(fmt::format("Attempt {}{}", c->attempt, done ? "  -  COMPLETE" : ""),
+				"bigFont.fnt", 0.4f, done ? ccColor3B{ 140, 255, 140 } : ccColor3B{ 255, 255, 255 });
+			title->setAnchorPoint({ 0, 0.5f });
+			fit(title, W - 180.f, 0.4f);
+			title->setPosition({ 12.f, y + 8.f });
+			m_clipsScroll->m_contentLayer->addChild(title);
+
+			auto sub = label(fmt::format("{:.1f}%   {}   {} inputs{}{}", c->percent,
+					formatTime((float)c->frames / 240.f), c->inputs.size(),
+					c->practice ? "   practice" : "", c->subframe ? "   CBS/CBF!" : ""),
+				"chatFont.fnt", 0.5f, SUBTLE);
+			sub->setAnchorPoint({ 0, 0.5f });
+			fit(sub, W - 180.f, 0.5f);
+			sub->setPosition({ 12.f, y - 8.f });
+			m_clipsScroll->m_contentLayer->addChild(sub);
+
+			auto watch = button("Watch", "GJ_button_01.png", this, menu_selector(GDMenuPopup::onWatchClip), 50, 0.6f);
+			watch->setTag((int)back);
+			watch->setPosition({ W - 110.f, y });
+			rowMenu->addChild(watch);
+			auto save = button("Save", "GJ_button_05.png", this, menu_selector(GDMenuPopup::onSaveClip), 44, 0.6f);
+			save->setTag((int)back);
+			save->setPosition({ W - 63.f, y });
+			rowMenu->addChild(save);
+			auto del = button("X", "GJ_button_06.png", this, menu_selector(GDMenuPopup::onDeleteClip), 20, 0.6f);
+			del->setTag((int)back);
+			del->setPosition({ W - 30.f, y });
+			rowMenu->addChild(del);
+			y -= rowH;
+		}
+		m_clipsScroll->scrollToTop();
+	}
+
+	void onWatchClip(CCObject* s) {
+		size_t back = (size_t)static_cast<CCNode*>(s)->getTag();
+		// watching replaces whatever the bot is doing - never behind the user's back
+		if (g_bot.state != BotState::Idle) { notify("Stop the current recording / playback first", NotificationIcon::Warning); return; }
+		if (!needLevel()) return;
+		closeAndResume();
+		clips::watch(back);
+	}
+	void onSaveClip(CCObject* s) { clips::save((size_t)static_cast<CCNode*>(s)->getTag()); }
+	void onDeleteClip(CCObject* s) {
+		int back = static_cast<CCNode*>(s)->getTag();
+		Ref<GDMenuPopup> self = this;
+		createQuickPopup("Delete clip?", "This attempt recording will be gone.", "Cancel", "Delete",
+			[self, back](FLAlertLayer*, bool ok) {
+				if (!ok) return;
+				clips::remove((size_t)back);
+				self->rebuildClipsList();
+			});
+	}
+	void onClearClips(CCObject*) {
+		Ref<GDMenuPopup> self = this;
+		createQuickPopup("Clear all clips?", "Every recorded attempt for this level will be deleted.", "Cancel", "Clear",
+			[self](FLAlertLayer*, bool ok) {
+				if (!ok) return;
+				clips::clear();
+				self->rebuildClipsList();
+			});
+	}
+	void onClipsCount(CCObject* s) {
+		int64_t v = Mod::get()->getSettingValue<int64_t>("clips-count") + (int64_t)stepOf(s);
+		v = std::clamp<int64_t>(v, 0, 50);
+		Mod::get()->setSettingValue<int64_t>("clips-count", v);
+		refresh();
+	}
+
 	// ------------------------------------------------------------ Hacks tab (scrolls: it outgrew one screen)
+	static std::string quickRespawnText() {
+		float v = (float)Mod::get()->getSettingValue<double>("quick-respawn");
+		return v <= 0.f ? "off" : fmt::format("{:.1f}s", v);
+	}
+	static std::string hitLimitText() {
+		int64_t v = Mod::get()->getSettingValue<int64_t>("noclip-hit-limit");
+		return v <= 0 ? "off" : fmt::format("{}", v);
+	}
+	static std::string accLimitText() {
+		float v = (float)Mod::get()->getSettingValue<double>("noclip-acc-limit");
+		return v <= 0.f ? "off" : fmt::format("{:.0f}%", v);
+	}
+
 	void buildHacksTab() {
 		float W = m_area.width, H = m_area.height;
 		heading("Hacks", H - 16.f);
 		auto scroll = ScrollLayer::create({ W - 8.f, H - 30.f });
 		scroll->setPosition({ 4.f, 4.f });
 		m_content->addChild(scroll);
-		float total = 272.f;
+		float total = 692.f;
 		scroll->m_contentLayer->setContentSize({ W - 8.f, total });
 		auto hmenu = CCMenu::create();
 		hmenu->setPosition({ 0, 0 });
 		scroll->m_contentLayer->addChild(hmenu, 2);
 		m_host = scroll->m_contentLayer;
 
-		toggleRow(hmenu, total - 21.f, "Noclip", "You can't die (anticheat spike still works)", g_hacks.noclip, menu_selector(GDMenuPopup::onNoclip));
-		toggleRow(hmenu, total - 63.f, "Show Hitboxes", "Draw hitboxes outside practice mode", g_hacks.hitboxes, menu_selector(GDMenuPopup::onHitbox));
-		toggleRow(hmenu, total - 105.f, "Speedhack", "Change the game speed", g_hacks.speedhack, menu_selector(GDMenuPopup::onSpeed));
-		toggleRow(hmenu, total - 147.f, "Player Trail", "Draw your flight path in the theme colour",
-			Mod::get()->getSettingValue<bool>("player-trail"), menu_selector(GDMenuPopup::onTrail));
+		float y = total - 21.f;
+		toggleRow(hmenu, y, "Noclip", "You can't die (anticheat spike still works)",
+			g_hacks.noclip, menu_selector(GDMenuPopup::onNoclip)); y -= 42.f;
+		toggleRow(hmenu, y, "Noclip: Player 1", "Noclip protects player 1",
+			Mod::get()->getSettingValue<bool>("noclip-p1"), menu_selector(GDMenuPopup::onNoclipP1)); y -= 42.f;
+		toggleRow(hmenu, y, "Noclip: Player 2", "Noclip protects player 2 (dual / 2-player)",
+			Mod::get()->getSettingValue<bool>("noclip-p2"), menu_selector(GDMenuPopup::onNoclipP2)); y -= 42.f;
+		stepperRow(hmenu, y, "Noclip hit limit", hitLimitText(),
+			{ { "-10", -10.f }, { "-1", -1.f }, { "+1", 1.f }, { "+10", 10.f } }, menu_selector(GDMenuPopup::onNoclipHitLimit)); y -= 40.f;
+		stepperRow(hmenu, y, "Noclip accuracy floor", accLimitText(),
+			{ { "-5", -5.f }, { "-1", -1.f }, { "+1", 1.f }, { "+5", 5.f } }, menu_selector(GDMenuPopup::onNoclipAccLimit)); y -= 40.f;
+		toggleRow(hmenu, y, "Show Hitboxes", "Draw hitboxes outside practice mode",
+			g_hacks.hitboxes, menu_selector(GDMenuPopup::onHitbox)); y -= 42.f;
+		toggleRow(hmenu, y, "Hitboxes On Death", "Force GD's show-hitboxes-on-death option on",
+			Mod::get()->getSettingValue<bool>("hitboxes-on-death"), menu_selector(GDMenuPopup::onHitboxesDeath)); y -= 42.f;
+		toggleRow(hmenu, y, "Speedhack", "Change the game speed",
+			g_hacks.speedhack, menu_selector(GDMenuPopup::onSpeed)); y -= 42.f;
 
 		// speed controls
-		float y = total - 193.f;
 		auto bg = card({ W - 16.f, 44.f }, 60);
 		bg->setPosition({ W / 2, y });
 		host()->addChild(bg);
@@ -767,9 +927,25 @@ protected:
 			b->setPosition({ s.x, y });
 			hmenu->addChild(b);
 		}
+		y -= 36.f;
 		auto reset = button("Reset to 1x", "GJ_button_04.png", this, menu_selector(GDMenuPopup::onSpeedReset), 80, 0.55f);
-		reset->setPosition({ W / 2, y - 36.f });
+		reset->setPosition({ W / 2, y });
 		hmenu->addChild(reset);
+		y -= 40.f;
+
+		toggleRow(hmenu, y, "Sync Music With Speedhack", "Pitch the song with the speed so music stays in sync",
+			Mod::get()->getSettingValue<bool>("speedhack-audio"), menu_selector(GDMenuPopup::onAudioSync)); y -= 42.f;
+		stepperRow(hmenu, y, "Quick respawn", quickRespawnText(),
+			{ { "-0.5", -0.5f }, { "-0.1", -0.1f }, { "+0.1", 0.1f }, { "+0.5", 0.5f } }, menu_selector(GDMenuPopup::onQuickRespawn)); y -= 40.f;
+		toggleRow(hmenu, y, "Player Trail", "Draw your flight path in the theme colour",
+			Mod::get()->getSettingValue<bool>("player-trail"), menu_selector(GDMenuPopup::onTrail)); y -= 42.f;
+		toggleRow(hmenu, y, "Pause CBS/CBF For Bot", "Click Between Steps (vanilla) + Click Between Frames (mod) land inputs between ticks - replays can't. Both pause while the bot runs, then restore.",
+			Mod::get()->getSettingValue<bool>("manage-cbs"), menu_selector(GDMenuPopup::onManageCbs)); y -= 42.f;
+		toggleRow(hmenu, y, "Pause CBS For Clips", "Force vanilla CBS off while clips record so replays are frame-perfect. Off by default: your CBS choice stays untouched.",
+			Mod::get()->getSettingValue<bool>("clips-pause-cbs"), menu_selector(GDMenuPopup::onClipsCbs)); y -= 42.f;
+		toggleRow(hmenu, y, "Cheat Indicator", "The GDM bubble says CHEATS in red while any hack is active",
+			Mod::get()->getSettingValue<bool>("cheat-indicator"), menu_selector(GDMenuPopup::onCheatInd)); y -= 42.f;
+
 		m_host = nullptr;
 		scroll->scrollToTop();
 	}
@@ -1091,6 +1267,35 @@ protected:
 		Mod::get()->setSettingValue<bool>("player-trail", !Mod::get()->getSettingValue<bool>("player-trail"));
 		refresh();
 	}
+	// setting-backed toggles (one flip helper keeps them all identical)
+	static void flipSetting(char const* key) {
+		Mod::get()->setSettingValue<bool>(key, !Mod::get()->getSettingValue<bool>(key));
+	}
+	void onNoclipP1(CCObject*)     { flipSetting("noclip-p1"); refresh(); }
+	void onNoclipP2(CCObject*)     { flipSetting("noclip-p2"); refresh(); }
+	void onHitboxesDeath(CCObject*){ flipSetting("hitboxes-on-death"); refresh(); }
+	void onAudioSync(CCObject*)    { flipSetting("speedhack-audio"); refresh(); }
+	void onManageCbs(CCObject*)    { flipSetting("manage-cbs"); refresh(); }
+	void onClipsCbs(CCObject*)     { flipSetting("clips-pause-cbs"); refresh(); }
+	void onCheatInd(CCObject*)     { flipSetting("cheat-indicator"); refresh(); }
+	void onNoclipHitLimit(CCObject* s) {
+		int64_t v = Mod::get()->getSettingValue<int64_t>("noclip-hit-limit") + (int64_t)stepOf(s);
+		v = std::clamp<int64_t>(v, 0, 9999);
+		Mod::get()->setSettingValue<int64_t>("noclip-hit-limit", v);
+		refresh();
+	}
+	void onNoclipAccLimit(CCObject* s) {
+		float v = (float)Mod::get()->getSettingValue<double>("noclip-acc-limit") + stepOf(s);
+		v = std::clamp(std::round(v), 0.f, 100.f);
+		Mod::get()->setSettingValue<double>("noclip-acc-limit", (double)v);
+		refresh();
+	}
+	void onQuickRespawn(CCObject* s) {
+		float v = (float)Mod::get()->getSettingValue<double>("quick-respawn") + stepOf(s);
+		v = std::clamp(std::round(v * 10.f) / 10.f, 0.f, 3.f);
+		Mod::get()->setSettingValue<double>("quick-respawn", (double)v);
+		refresh();
+	}
 	void onHitbox(CCObject*)     { hacks::toggleHitboxes(); refresh(); }
 	void onSpeed(CCObject*)      { hacks::toggleSpeed(); refresh(); }
 	void onSpeedStep(CCObject* s){ hacks::setSpeed(g_hacks.speed + static_cast<CCFloat*>(static_cast<CCNode*>(s)->getUserObject())->getValue()); refresh(); }
@@ -1204,6 +1409,13 @@ protected:
 		sub->setPosition(c + CCPoint(0, -8.f * scale));
 		sub->setOpacity((GLubyte)(255 * alpha));
 		m_body->addChild(sub);
+
+		// Mega Hack style cheat indicator: while any hack is active, the bubble says so
+		if (g_bot.state == BotState::Idle && extras::cheatsActive() &&
+		    Mod::get()->getSettingValue<bool>("cheat-indicator")) {
+			sub->setString("CHEATS");
+			sub->setColor({ 255, 110, 110 });
+		}
 
 		this->setContentSize(sz);
 		this->setAnchorPoint({ 0.5f, 0.5f });

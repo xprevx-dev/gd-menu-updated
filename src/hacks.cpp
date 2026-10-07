@@ -1,5 +1,6 @@
 // Hacks: noclip, speedhack, hitboxes, start-pos switcher, frame stepper + PC keybinds.
 #include "state.hpp"
+#include <Geode/Bindings.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/CCScheduler.hpp>
@@ -160,9 +161,45 @@ void hacks::updateStepperControls() {
 }
 
 // ---------------------------------------------------------------- hooks
+namespace {
+	// "Sync Music With Speedhack" (Eclipse / xdBot style): pitch the song with the
+	// scheduler speed so fast/slow motion doesn't drift away from the music. The base
+	// frequency is captured once per channel and restored when the hack ends or you
+	// leave the level (want=false path), so nothing stays detuned.
+	float s_audioBase[2] = { 0.f, 0.f };
+	bool s_audioApplied[2] = { false, false };
+
+	void syncMusicAudio(float speed) {
+		bool want = speed != 1.f && Mod::get()->getSettingValue<bool>("speedhack-audio");
+		if (!want && !s_audioApplied[0] && !s_audioApplied[1]) return; // idle fast path
+		auto eng = FMODAudioEngine::get();
+		if (!eng) return;
+		for (int id = 0; id < 2; id++) {
+			auto ch = eng->getActiveMusicChannel(id);
+			if (!ch) { s_audioApplied[id] = false; s_audioBase[id] = 0.f; continue; }
+			if (want) {
+				if (!s_audioApplied[id]) {
+					float f = 0.f;
+					ch->getFrequency(&f);
+					s_audioBase[id] = f;
+					s_audioApplied[id] = true;
+				}
+				if (s_audioBase[id] > 1.f) ch->setFrequency(s_audioBase[id] * speed);
+			}
+			else if (s_audioApplied[id]) {
+				ch->setFrequency(s_audioBase[id]);
+				s_audioApplied[id] = false;
+				s_audioBase[id] = 0.f;
+			}
+		}
+	}
+}
+
 class $modify(HackScheduler, CCScheduler) {
 	void update(float dt) {
-		if (g_hacks.speedhack && g_bot.state != BotState::Resuming && PlayLayer::get()) dt *= g_hacks.speed;
+		bool hack = g_hacks.speedhack && g_bot.state != BotState::Resuming && PlayLayer::get();
+		if (hack) dt *= g_hacks.speed;
+		syncMusicAudio(hack ? g_hacks.speed : 1.f);
 		CCScheduler::update(dt);
 	}
 };
