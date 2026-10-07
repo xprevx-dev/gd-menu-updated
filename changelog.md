@@ -30,6 +30,9 @@ The biggest feature drop yet: 18 new settings, a searchable Hacks tab and a new 
 - No Pulse passes colours through untouched; HSV-mode pulses that animate outside the colour callback may still move.
 - Copy Hack, No Short Numbers, custom wave-trail colour, portal lighting / mirror toggles, auto song download and show-trajectory have no clean hook point in the 2.2081 bindings - skipped rather than half-broken.
 
+## Platform
+- **iOS verified end-to-end**: every hook this update adds (no particles, no pulse, all passable, jump hack, unlock icons, force platformer, hide pause, practice music bypass, pitch shift...) binds to a real iOS address in the GD 2.2081 bindings, the only Windows-specific code path has a POSIX fallback, and CI builds the iOS target on every push and every release. The release `.geode` is one **combined** package: the same file works on Windows, macOS, iOS and Android (Geode 5, GD 2.2081).
+
 # v2.6.0
 The Mega Hack / Eclipse feature drop + always-on attempt replay.
 
