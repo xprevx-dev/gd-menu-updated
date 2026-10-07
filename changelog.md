@@ -14,6 +14,7 @@ The biggest feature drop yet: 18 new settings, a searchable Hacks tab and a new 
 - **Audio Pitch Shift** (0.25x-4x) - pitch the music independently of game speed; combines with Sync Music With Speedhack.
 
 ## Visual cleanup
+- **Layout Mode (Editor View)** - enter any level and see its flat editor-style layout instead of the decorated render: white solids, red hazards, purple portals, yellow pads, cyan rings/orbs, gold coins, faint grey decorations. Built on a load-time X-sorted object list + per-frame camera-rect query (zoom/mirror/platformer aware), so it costs nothing off-screen and never touches physics. Mid-level trigger-spawned objects stay decorated; a restart restores everything.
 - **No Particles** (level-spawned particle objects; death effects stay), **No Pulse** (pulse triggers leave colours untouched), **No Wave Trail**.
 - **Unlock Icons** - every icon looks unlocked in the garage (client-side cosmetic; server-side items untouched).
 - **Player Trail now rolls**: new **Trail Length** setting (1-60 s, default 20). The trail rotates through chunk draw-nodes instead of wiping at a hard segment cap - steady length, no flicker, no redraw cost.

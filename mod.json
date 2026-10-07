@@ -363,6 +363,12 @@
 			"name": "No Wave Trail",
 			"description": "Hide the wave's trail streak in every gamemode."
 		},
+		"layout-mode": {
+			"type": "bool",
+			"default": false,
+			"name": "Layout Mode (Editor View)",
+			"description": "Render the level as its flat editor-style layout instead of the decorated version: objects become colour-coded blocks (white = solid, red = hazard, purple = portal, yellow = pad, cyan = ring/orb, gold = coin, faint grey = decoration). Visual only - physics are untouched. Objects spawned mid-level by triggers stay decorated; a restart fully restores everything."
+		},
 		"unlock-icons": {
 			"type": "bool",
 			"default": false,
