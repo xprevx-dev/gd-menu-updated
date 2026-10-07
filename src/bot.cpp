@@ -5,6 +5,7 @@
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/PauseLayer.hpp>
 #include <algorithm>
+#include <ctime>
 #include <fstream>
 #include <map>
 #include <span>
@@ -132,6 +133,20 @@ namespace {
 		out.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
 		return true;
 	}
+
+	// "05-15 21-32" style stamp for auto-saved replay names (no ':' - invalid on Windows)
+	std::string timestamp() {
+		auto t = std::time(nullptr);
+		std::tm tm{};
+#ifdef _WIN32
+		localtime_s(&tm, &t);
+#else
+		localtime_r(&t, &tm);
+#endif
+		char buf[32];
+		std::strftime(buf, sizeof(buf), "%m-%d %H-%M", &tm);
+		return buf;
+	}
 }
 
 int bot::frame() {
@@ -169,6 +184,8 @@ void bot::startRecording() {
 	g_bot.loadedName.clear();
 	setState(BotState::Recording);
 	std::memset(g_bot.held, 0, sizeof(g_bot.held));
+	std::memset(g_bot.viewHeld, 0, sizeof(g_bot.viewHeld));
+	extras::bumpStat("recordings");
 	pl->resetLevel();
 	notify("Recording started", NotificationIcon::Success);
 }
@@ -190,6 +207,7 @@ bool bot::startPlayback() {
 	std::stable_sort(g_bot.inputs.begin(), g_bot.inputs.end(), [](auto& a, auto& b) { return a.frame < b.frame; });
 	setState(BotState::Playing);
 	g_bot.playIndex = 0;
+	extras::bumpStat("plays");
 	pl->resetLevel();
 	notify("Playing bot", NotificationIcon::Success);
 	return true;
@@ -290,6 +308,7 @@ bool bot::resumeSession() {
 	g_bot.fixIndex = 0;
 	setState(BotState::Resuming);
 	g_bot.playIndex = 0;
+	extras::bumpStat("resumes");
 	bot::setTimeScale((float)Mod::get()->getSettingValue<double>("resume-speed"));
 	pl->resetLevel();
 	notify(fmt::format("Resuming to {:.1f}%...", g_bot.lastPercent));
@@ -403,6 +422,7 @@ bool replays::save(std::string name, std::string const& ext, bool copyToEclipse)
 	f.write(reinterpret_cast<char const*>(bytes.data()), (std::streamsize)bytes.size());
 	f.close();
 	g_bot.loadedName = path.filename().string();
+	extras::bumpStat("saves");
 
 	if (copyToEclipse) {
 		// Eclipse only lists .gdr2/.gdr files in ITS OWN folder, so drop a .gdr2 copy there
@@ -426,7 +446,11 @@ bool replays::load(std::filesystem::path const& path) {
 	std::vector<uint8_t> bytes;
 	if (!readFile(path, bytes)) { notify("Couldn't open file", NotificationIcon::Error); return false; }
 	auto res = gdm::safeImport(std::span<uint8_t>(bytes));
-	if (res.isErr()) { notify("Not a GDR2 replay: " + res.unwrapErr(), NotificationIcon::Error); return false; }
+	if (res.isErr()) {
+		extras::bumpStat("blocked"); // corrupt/forged file stopped before it could hurt anything
+		notify("Not a GDR2 replay: " + res.unwrapErr(), NotificationIcon::Error);
+		return false;
+	}
 	auto& r = res.unwrap();
 
 	bot::stop();
@@ -469,6 +493,11 @@ class $modify(BotGameLayer, GJBaseGameLayer) {
 			return; // the bot is driving: ignore the real player
 
 		bool player2 = isTwoPlayer(this) && m_gameState.m_isDualMode && !isPlayer1;
+		// HUD input viewer: show what the game is actually applying - macro presses
+		// during playback, real presses otherwise (ignored presses stay invisible)
+		if (button >= 1 && button <= 3 &&
+			(g_bot.botInput || g_bot.state == BotState::Idle || g_bot.state == BotState::Recording))
+			g_bot.viewHeld[player2][button] = down;
 		BotInput captured = makeInput(this, (int)m_gameState.m_currentProgress, button, down, player2);
 
 		GJBaseGameLayer::handleButton(down, button, isPlayer1);
@@ -568,6 +597,7 @@ class $modify(BotPlayLayer, PlayLayer) {
 		g_bot.pendingSteps = 0;
 		std::memset(g_bot.realHeld, 0, sizeof(g_bot.realHeld));
 		std::memset(g_bot.held, 0, sizeof(g_bot.held));
+		std::memset(g_bot.viewHeld, 0, sizeof(g_bot.viewHeld));
 		if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
 		int id = level->m_levelID.value();
 		if (id != g_bot.levelID) { // keep a loaded replay when re-entering the same level
@@ -644,6 +674,8 @@ class $modify(BotPlayLayer, PlayLayer) {
 		if (g_bot.state == BotState::Recording) {
 			bot::saveSession();
 			setState(BotState::Idle);
+			if (Mod::get()->getSettingValue<bool>("autosave-bot"))
+				replays::save(fmt::format("{} {}", std::string(m_level->m_levelName), timestamp()), ".gdr2", false);
 			notify("Level complete! Pause > GDMenu > Save Bot to keep it", NotificationIcon::Success);
 		}
 		else if (g_bot.state == BotState::Playing || g_bot.state == BotState::Resuming) {

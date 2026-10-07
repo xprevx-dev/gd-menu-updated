@@ -25,6 +25,14 @@ void extras::loadHackState() {
 
 $on_mod(Loaded) { extras::loadHackState(); }
 
+// ---------------------------------------------------------------- stats
+void extras::bumpStat(char const* key) {
+	Mod::get()->setSavedValue<int64_t>(fmt::format("stat-{}", key), stat(key) + 1);
+}
+int64_t extras::stat(char const* key) {
+	return Mod::get()->getSavedValue<int64_t>(fmt::format("stat-{}", key), 0);
+}
+
 // ---------------------------------------------------------------- themes
 namespace {
 	struct Theme { char const* name; ccColor3B color; };
@@ -36,6 +44,7 @@ namespace {
 		{ "Gold",   { 255, 205,  80 } },
 		{ "Pink",   { 255, 140, 210 } },
 		{ "Mono",   { 225, 225, 235 } },
+		{ "Custom", { 120, 200, 255 } }, // colour comes from the custom-accent setting
 	};
 	constexpr int THEME_COUNT = sizeof(THEMES) / sizeof(THEMES[0]);
 }
@@ -43,7 +52,11 @@ int extras::themeCount() { return THEME_COUNT; }
 int extras::themeIndex() { return std::clamp((int)Mod::get()->getSavedValue<int64_t>("theme", 0), 0, THEME_COUNT - 1); }
 void extras::setTheme(int i) { Mod::get()->setSavedValue<int64_t>("theme", ((i % THEME_COUNT) + THEME_COUNT) % THEME_COUNT); }
 char const* extras::themeName(int i) { return THEMES[std::clamp(i, 0, THEME_COUNT - 1)].name; }
-ccColor3B extras::accent() { return THEMES[themeIndex()].color; }
+ccColor3B extras::accent() {
+	if (themeIndex() == THEME_COUNT - 1)
+		return Mod::get()->getSettingValue<ccColor3B>("custom-accent");
+	return THEMES[themeIndex()].color;
+}
 float extras::bubbleOpacity() { return (float)std::clamp(Mod::get()->getSavedValue<double>("bubble-opacity", 1.0), 0.2, 1.0); }
 void extras::setBubbleOpacity(float v) { Mod::get()->setSavedValue<double>("bubble-opacity", std::clamp(v, 0.2f, 1.f)); }
 float extras::bubbleSize() { return (float)std::clamp(Mod::get()->getSavedValue<double>("bubble-size", 1.0), 0.6, 1.8); }

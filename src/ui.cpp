@@ -318,6 +318,44 @@ public:
 	}
 };
 
+// ---------------------------------------------------------------- first-run intro
+class IntroPopup : public Popup {
+protected:
+	bool init() {
+		if (!Popup::init(380.f, 250.f)) return false;
+		this->setTitle("Welcome to GDMenu");
+		auto size = m_mainLayer->getContentSize();
+		auto text = CCLabelBMFont::create(
+			"GDMenu is your practice toolbox - and it stays out of your way.\n\n"
+			"  -  The round GDM bubble opens this menu. Drag it anywhere.\n"
+			"  -  Nothing shows during gameplay unless you enable the HUD.\n"
+			"  -  Record, die, quit - Resume picks up at your exact frame.\n"
+			"  -  Safe Mode (on) makes sure cheated attempts never save.\n"
+			"  -  Every key is rebindable in Settings, combos included.",
+			"chatFont.fnt");
+		text->setScale(0.55f);
+		text->setAlignment(kCCTextAlignmentLeft);
+		text->setAnchorPoint({ 0.f, 1.f });
+		text->setPosition({ 26.f, size.height - 42.f });
+		m_mainLayer->addChild(text);
+		auto ok = button("Let's go", "GJ_button_01.png", this, menu_selector(IntroPopup::onOk), 100, 0.8f);
+		ok->setPosition({ size.width / 2, 24.f });
+		m_buttonMenu->addChild(ok);
+		return true;
+	}
+	void onOk(CCObject*) {
+		Mod::get()->setSavedValue<int64_t>("intro-seen", 1);
+		this->onClose(nullptr);
+	}
+public:
+	static IntroPopup* create() {
+		auto ret = new IntroPopup();
+		if (ret->init()) { ret->autorelease(); return ret; }
+		delete ret;
+		return nullptr;
+	}
+};
+
 // ---------------------------------------------------------------- main panel
 class GDMenuPopup : public Popup {
 protected:
@@ -443,12 +481,16 @@ protected:
 		m_content->addChild(h);
 	}
 
+	// Rows normally live on m_content; tabs that scroll set m_host to the scroll layer.
+	CCNode* m_host = nullptr;
+	CCNode* host() { return m_host ? m_host : m_content; }
+
 	// A toggle row: [title / description ......... (toggle)]
 	void toggleRow(CCMenu* menu, float y, std::string const& title, std::string const& desc, bool on, SEL_MenuHandler sel) {
 		float w = m_area.width - 16.f;
 		auto bg = card({ w, 38.f }, 60);
 		bg->setPosition({ m_area.width / 2, y });
-		m_content->addChild(bg);
+		host()->addChild(bg);
 
 		// thin accent strip on the left edge of active rows
 		if (on) {
@@ -456,19 +498,19 @@ protected:
 			auto acc = ccc4f(ACCENT.r / 255.f, ACCENT.g / 255.f, ACCENT.b / 255.f, 0.9f);
 			bar->drawRect(CCPoint(0.f, -19.f), CCPoint(3.f, 19.f), acc, 0.f, acc);
 			bar->setPosition({ 8.f, y });
-			m_content->addChild(bar);
+			host()->addChild(bar);
 		}
 
 		auto t = label(title, "bigFont.fnt", 0.42f, on ? ccColor3B{ 140, 255, 140 } : ccColor3B{ 255, 255, 255 });
 		t->setAnchorPoint({ 0, 0.5f });
 		t->setPosition({ 18.f, y + 7.f });
-		m_content->addChild(t);
+		host()->addChild(t);
 
 		auto d = label(desc, "chatFont.fnt", 0.55f, SUBTLE);
 		d->setAnchorPoint({ 0, 0.5f });
 		fit(d, w - 70.f, 0.55f);
 		d->setPosition({ 18.f, y - 8.f });
-		m_content->addChild(d);
+		host()->addChild(d);
 
 		auto toggler = CCMenuItemToggler::createWithStandardSprites(this, sel, 0.7f * UI_SCALE);
 		toggler->toggle(on);
@@ -689,34 +731,47 @@ protected:
 		m_botsScroll->scrollToTop();
 	}
 
-	// ------------------------------------------------------------ Hacks tab
+	// ------------------------------------------------------------ Hacks tab (scrolls: it outgrew one screen)
 	void buildHacksTab() {
-		auto menu = contentMenu();
 		float W = m_area.width, H = m_area.height;
 		heading("Hacks", H - 16.f);
-		toggleRow(menu, H - 52.f,  "Noclip", "You can't die (anticheat spike still works)", g_hacks.noclip, menu_selector(GDMenuPopup::onNoclip));
-		toggleRow(menu, H - 94.f,  "Show Hitboxes", "Draw hitboxes outside practice mode", g_hacks.hitboxes, menu_selector(GDMenuPopup::onHitbox));
-		toggleRow(menu, H - 136.f, "Speedhack", "Change the game speed", g_hacks.speedhack, menu_selector(GDMenuPopup::onSpeed));
+		auto scroll = ScrollLayer::create({ W - 8.f, H - 30.f });
+		scroll->setPosition({ 4.f, 4.f });
+		m_content->addChild(scroll);
+		float total = 272.f;
+		scroll->m_contentLayer->setContentSize({ W - 8.f, total });
+		auto hmenu = CCMenu::create();
+		hmenu->setPosition({ 0, 0 });
+		scroll->m_contentLayer->addChild(hmenu, 2);
+		m_host = scroll->m_contentLayer;
+
+		toggleRow(hmenu, total - 21.f, "Noclip", "You can't die (anticheat spike still works)", g_hacks.noclip, menu_selector(GDMenuPopup::onNoclip));
+		toggleRow(hmenu, total - 63.f, "Show Hitboxes", "Draw hitboxes outside practice mode", g_hacks.hitboxes, menu_selector(GDMenuPopup::onHitbox));
+		toggleRow(hmenu, total - 105.f, "Speedhack", "Change the game speed", g_hacks.speedhack, menu_selector(GDMenuPopup::onSpeed));
+		toggleRow(hmenu, total - 147.f, "Player Trail", "Draw your flight path in the theme colour",
+			Mod::get()->getSettingValue<bool>("player-trail"), menu_selector(GDMenuPopup::onTrail));
 
 		// speed controls
-		float y = H - 182.f;
+		float y = total - 193.f;
 		auto bg = card({ W - 16.f, 44.f }, 60);
 		bg->setPosition({ W / 2, y });
-		m_content->addChild(bg);
+		host()->addChild(bg);
 		auto val = label(fmt::format("{:.2f}x", g_hacks.speed), "bigFont.fnt", 0.6f, ACCENT);
 		val->setPosition({ W / 2, y });
-		m_content->addChild(val);
+		host()->addChild(val);
 		struct Step { const char* text; float delta; float x; };
 		for (auto s : { Step{ "-0.25", -0.25f, W / 2 - 125.f }, Step{ "-0.05", -0.05f, W / 2 - 70.f },
 		                Step{ "+0.05", 0.05f, W / 2 + 70.f }, Step{ "+0.25", 0.25f, W / 2 + 125.f } }) {
 			auto b = button(s.text, "GJ_button_04.png", this, menu_selector(GDMenuPopup::onSpeedStep), 40, 0.55f);
 			b->setUserObject(CCFloat::create(s.delta));
 			b->setPosition({ s.x, y });
-			menu->addChild(b);
+			hmenu->addChild(b);
 		}
 		auto reset = button("Reset to 1x", "GJ_button_04.png", this, menu_selector(GDMenuPopup::onSpeedReset), 80, 0.55f);
 		reset->setPosition({ W / 2, y - 36.f });
-		menu->addChild(reset);
+		hmenu->addChild(reset);
+		m_host = nullptr;
+		scroll->scrollToTop();
 	}
 
 	// ------------------------------------------------------------ Tools tab
@@ -771,16 +826,16 @@ protected:
 		float W = m_area.width;
 		auto bg = card({ W - 16.f, 34.f }, 60);
 		bg->setPosition({ W / 2, y });
-		m_content->addChild(bg);
+		host()->addChild(bg);
 		auto t = label(title, "bigFont.fnt", 0.36f);
 		t->setAnchorPoint({ 0, 0.5f });
 		t->setPosition({ 16.f, y });
-		m_content->addChild(t);
+		host()->addChild(t);
 		float cx = W - 100.f;
 		auto v = label(value, "bigFont.fnt", 0.45f, ACCENT);
 		fit(v, 60.f, 0.45f);
 		v->setPosition({ cx, y });
-		m_content->addChild(v);
+		host()->addChild(v);
 		int n = (int)steps.size(), i = 0;
 		for (auto& [txt, d] : steps) {
 			float off = (i < n / 2) ? -(n / 2 - i) * 34.f - 20.f : (i - n / 2 + 1) * 34.f + 20.f;
@@ -803,11 +858,19 @@ protected:
 			{ { "-5", -5.f }, { "-1", -1.f }, { "+1", 1.f }, { "+5", 5.f } }, menu_selector(GDMenuPopup::onCps));
 		toggleRow(menu, H - 134.f, "Safe Mode", "No % / completions saved after using noclip, speed, bot...", g_hacks.safeMode, menu_selector(GDMenuPopup::onSafe));
 		toggleRow(menu, H - 176.f, "Noclip Accuracy", "Small % + deaths counter while noclip is on", g_hacks.accuracy, menu_selector(GDMenuPopup::onAccuracy));
-		auto note = label(g_hacks.cheatedAttempt && PlayLayer::get() ? "This attempt is marked as cheated" : "Safe Mode only kicks in while a cheat is used",
-			"chatFont.fnt", 0.55f, SUBTLE);
-		fit(note, W - 20.f, 0.55f);
-		note->setPosition({ W / 2, 22.f });
-		m_content->addChild(note);
+		// lifetime usage counters + cheated-attempt reminder
+		bool cheated = g_hacks.cheatedAttempt && PlayLayer::get();
+		auto sc = card({ W - 16.f, 34.f }, 60);
+		sc->setPosition({ W / 2, 26.f });
+		m_content->addChild(sc);
+		auto stats = label(fmt::format("{}{} recordings · {} saves · {} resumes · {} plays · {} corrupt blocked",
+			cheated ? "CHEATED ATTEMPT · " : "",
+			extras::stat("recordings"), extras::stat("saves"), extras::stat("resumes"),
+			extras::stat("plays"), extras::stat("blocked")),
+			"chatFont.fnt", 0.5f, cheated ? ccColor3B{ 255, 120, 120 } : SUBTLE);
+		fit(stats, W - 24.f, 0.5f);
+		stats->setPosition({ W / 2, 26.f });
+		m_content->addChild(stats);
 	}
 
 	// ------------------------------------------------------------ Style tab (themes + profiles)
@@ -1024,6 +1087,10 @@ protected:
 	void onFolder(CCObject*)     { geode::utils::file::openFolder(replays::dir()); }
 	void onRefresh(CCObject*)    { refresh(); }
 	void onNoclip(CCObject*)     { hacks::toggleNoclip(); refresh(); }
+	void onTrail(CCObject*) {
+		Mod::get()->setSettingValue<bool>("player-trail", !Mod::get()->getSettingValue<bool>("player-trail"));
+		refresh();
+	}
 	void onHitbox(CCObject*)     { hacks::toggleHitboxes(); refresh(); }
 	void onSpeed(CCObject*)      { hacks::toggleSpeed(); refresh(); }
 	void onSpeedStep(CCObject* s){ hacks::setSpeed(g_hacks.speed + static_cast<CCFloat*>(static_cast<CCNode*>(s)->getUserObject())->getValue()); refresh(); }
@@ -1249,6 +1316,14 @@ class $modify(GDMenuMainMenu, MenuLayer) {
 	bool init() {
 		if (!MenuLayer::init()) return false;
 		ensureBubble();
+		// one-time hello for fresh installs (next main-menu frame, so the scene is live)
+		static bool s_introQueued = false;
+		if (!Mod::get()->hasSavedValue("intro-seen") && !s_introQueued) {
+			s_introQueued = true;
+			queueInMainThread([] {
+				if (auto p = IntroPopup::create()) p->show();
+			});
+		}
 		return true;
 	}
 };

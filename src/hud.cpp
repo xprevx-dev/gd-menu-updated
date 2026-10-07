@@ -11,7 +11,7 @@ bool hud::showPercent()  { return Mod::get()->getSettingValue<bool>("hud-show-pe
 bool hud::showSpeed()    { return Mod::get()->getSettingValue<bool>("hud-show-speed"); }
 
 namespace {
-	constexpr int MAX_LINES = 3;
+	constexpr int MAX_LINES = 4;
 
 	struct Line {
 		std::string text;
@@ -100,6 +100,20 @@ class $modify(HudPlayLayer, PlayLayer) {
 		else if (g_hacks.speedhack) speed = g_hacks.speed;
 		if (hud::showSpeed() && speed != 1.f) info += fmt::format("   {:.2f}x", speed);
 		if (!info.empty()) ls[n++] = { info, { 255, 255, 255 } };
+		if (Mod::get()->getSettingValue<bool>("hud-show-inputs")) {
+			// live input viewer: what the game is applying right now (you or the bot)
+			auto held = [](int p) {
+				std::string s;
+				if (g_bot.viewHeld[p][1]) s += "JUMP ";
+				if (g_bot.viewHeld[p][2]) s += "LEFT ";
+				if (g_bot.viewHeld[p][3]) s += "RIGHT ";
+				while (!s.empty() && s.back() == ' ') s.pop_back();
+				return s;
+			};
+			std::string inputs = fmt::format("P1 [{}]", held(0));
+			if (m_gameState.m_isDualMode) inputs += fmt::format("   P2 [{}]", held(1));
+			ls[n++] = { inputs, { 200, 200, 220 } };
+		}
 		if (g_hacks.accuracy && g_hacks.noclip) {
 			float acc = g_hacks.accTicks ? 100.f * (1.f - (float)g_hacks.accDeadTicks / g_hacks.accTicks) : 100.f;
 			ls[n++] = { fmt::format("{:.2f}%  {} deaths", acc, g_hacks.accDeaths),

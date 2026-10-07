@@ -26,6 +26,7 @@ struct BotData {
 	bool botInput = false;   // true while the bot itself is calling handleButton
 	bool held[2][4] = {};    // [player][button] held according to the macro
 	bool realHeld[2][4] = {};// [player][button] what the real player is physically holding
+	bool viewHeld[2][4] = {};// [player][button] what the game is actually applying (HUD input viewer)
 	std::string loadedName;  // replay file currently loaded (for UI)
 
 	bool stepper = false;
@@ -147,6 +148,9 @@ namespace extras {
 	void setBubbleOpacity(float v);
 	float bubbleSize();           // multiplier
 	void setBubbleSize(float v);
+	// lifetime usage counters (More tab)
+	void bumpStat(char const* key);
+	int64_t stat(char const* key);
 	// profiles (3 slots)
 	std::string profileName(int slot);
 	bool profileExists(int slot);

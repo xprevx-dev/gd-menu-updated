@@ -149,6 +149,30 @@
 			"name": "HUD: Speed",
 			"description": "Show game speed while speedhack or resume fast-forward is active."
 		},
+		"hud-show-inputs": {
+			"type": "bool",
+			"default": true,
+			"name": "HUD: Input Viewer",
+			"description": "Show which buttons you (or the bot) are holding right now: jump / left / right per player."
+		},
+		"player-trail": {
+			"type": "bool",
+			"default": false,
+			"name": "Player Trail",
+			"description": "Draw the path your icon travels in your theme colour. Great for studying bot lines and wave corridors."
+		},
+		"autosave-bot": {
+			"type": "bool",
+			"default": false,
+			"name": "Auto-Save Bot On Complete",
+			"description": "When you complete a level while recording, also save the replay automatically (level name + date)."
+		},
+		"custom-accent": {
+			"type": "rgb",
+			"default": "#78c8ff",
+			"name": "Custom Theme Colour",
+			"description": "The accent colour used when the theme is set to Custom (Style tab)."
+		},
 		"loop-playback": {
 			"type": "bool",
 			"default": false,
