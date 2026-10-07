@@ -4,6 +4,7 @@
 // and Mega Hack style counters (FPS / attempts / jumps / level time).
 #include "state.hpp"
 #include <Geode/modify/PlayLayer.hpp>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 
@@ -14,7 +15,16 @@ bool hud::showPercent()  { return Mod::get()->getSettingValue<bool>("hud-show-pe
 bool hud::showSpeed()    { return Mod::get()->getSettingValue<bool>("hud-show-speed"); }
 
 namespace {
-	constexpr int MAX_LINES = 5; // state, info, inputs, accuracy, counters
+	// run tracking for Best Run / Run From (session-scoped; resets on level change)
+	float s_runStart = 0.f;
+	float s_bestPct = 0.f;
+	int s_bestLevelID = -1;
+}
+void hud::noteRunStart(float percent) { s_runStart = percent; }
+void hud::noteRunEnd(float percent)   { s_bestPct = std::max(s_bestPct, percent); }
+
+namespace {
+	constexpr int MAX_LINES = 6; // state, info, inputs, accuracy, counters, best/cps/from
 
 	struct Line {
 		std::string text;
@@ -51,6 +61,11 @@ class $modify(HudPlayLayer, PlayLayer) {
 		double fpsAcc = 0.0;
 		int fpsCount = 0;
 		int fps = 0;
+		// cps meter: jump clicks per wall-clock second (rising edges of viewHeld)
+		int cpsClicks = 0;
+		double cpsAcc = 0.0;
+		int cps = 0;
+		bool jumpPrev[2] = { false, false };
 	};
 
 	bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
@@ -98,12 +113,46 @@ class $modify(HudPlayLayer, PlayLayer) {
 		if (!(m_fields->config == currentConfig())) rebuildHud();
 		if (!m_fields->config.enabled) return;
 
+		// wall clock for the FPS + CPS windows (game dt is scaled by speedhack/resume,
+		// so it can't measure real frames or real clicks-per-second)
+		auto clockNow = std::chrono::steady_clock::now();
+		double realDt = 0.0;
+		if (m_fields->clockInit) realDt = std::chrono::duration<double>(clockNow - m_fields->lastClock).count();
+		m_fields->clockInit = true;
+		m_fields->lastClock = clockNow;
+		if (realDt > 0.0) {
+			m_fields->fpsAcc += realDt;
+			m_fields->fpsCount++;
+			if (m_fields->fpsAcc >= 0.5) {
+				m_fields->fps = (int)std::lround((double)m_fields->fpsCount / m_fields->fpsAcc);
+				m_fields->fpsAcc = 0.0;
+				m_fields->fpsCount = 0;
+			}
+			m_fields->cpsAcc += realDt;
+			if (m_fields->cpsAcc >= 1.0) {
+				m_fields->cps = m_fields->cpsClicks;
+				m_fields->cpsClicks = 0;
+				m_fields->cpsAcc = 0.0;
+			}
+		}
+		for (int p = 0; p < 2; p++) { // jump-click rising edges (you or the bot)
+			bool j = g_bot.viewHeld[p][1];
+			if (j && !m_fields->jumpPrev[p]) m_fields->cpsClicks++;
+			m_fields->jumpPrev[p] = j;
+		}
+		// Best Run / Run From are per level: reset when a different level is open
+		int levelID = m_level ? m_level->m_levelID.value() : -1;
+		if (levelID != s_bestLevelID) { s_bestLevelID = levelID; s_bestPct = 0.f; s_runStart = 0.f; }
+
 		Line ls[MAX_LINES];
 		int n = 0;
 		if (hud::showState() && g_bot.state != BotState::Idle)
 			ls[n++] = { bot::stateName(), bot::stateColor() };
 		std::string info;
-		if (hud::showPercent()) info += fmt::format("{:.1f}%", this->getCurrentPercent());
+		if (hud::showPercent()) {
+			int dec = (int)std::clamp<int64_t>(Mod::get()->getSettingValue<int64_t>("hud-percent-decimals"), 1, 3);
+			info += fmt::format("{:.{}f}%", this->getCurrentPercent(), dec);
+		}
 		if (hud::showFrame())   info += (info.empty() ? "" : "   ") + fmt::format("f {}", bot::frame());
 		float speed = 1.f;
 		if (g_bot.state == BotState::Resuming) speed = (float)Mod::get()->getSettingValue<double>("resume-speed");
@@ -136,18 +185,6 @@ class $modify(HudPlayLayer, PlayLayer) {
 			bool jOn = Mod::get()->getSettingValue<bool>("hud-show-jumps");
 			bool tOn = Mod::get()->getSettingValue<bool>("hud-show-time");
 			if (fOn || aOn || jOn || tOn) {
-				auto t = std::chrono::steady_clock::now();
-				if (m_fields->clockInit) {
-					double d = std::chrono::duration<double>(t - m_fields->lastClock).count();
-					if (d > 0.0) { m_fields->fpsAcc += d; m_fields->fpsCount++; }
-				}
-				else m_fields->clockInit = true;
-				m_fields->lastClock = t;
-				if (m_fields->fpsAcc >= 0.5) {
-					m_fields->fps = (int)std::lround((double)m_fields->fpsCount / m_fields->fpsAcc);
-					m_fields->fpsAcc = 0.0;
-					m_fields->fpsCount = 0;
-				}
 				std::string s;
 				auto add = [&](std::string const& part) { if (!s.empty()) s += "   "; s += part; };
 				if (fOn) add(fmt::format("FPS {}", m_fields->fps));
@@ -158,6 +195,20 @@ class $modify(HudPlayLayer, PlayLayer) {
 					add(fmt::format("TIME {}:{:02}", sec / 60, sec % 60));
 				}
 				ls[n++] = { s, { 190, 210, 255 } };
+			}
+		}
+		// session line: best run % / clicks per second / where this run started
+		{
+			bool bOn = Mod::get()->getSettingValue<bool>("hud-show-best");
+			bool cOn = Mod::get()->getSettingValue<bool>("hud-show-cps");
+			bool rOn = Mod::get()->getSettingValue<bool>("hud-show-runfrom");
+			if (bOn || cOn || rOn) {
+				std::string s;
+				auto add = [&](std::string const& part) { if (!s.empty()) s += "   "; s += part; };
+				if (bOn) add(fmt::format("BEST {:.1f}%", s_bestPct));
+				if (cOn) add(fmt::format("CPS {}", m_fields->cps));
+				if (rOn && s_runStart > 0.5f) add(fmt::format("FROM {:.0f}%", s_runStart));
+				if (!s.empty()) ls[n++] = { s, { 255, 220, 160 } };
 			}
 		}
 		layoutHud(n);

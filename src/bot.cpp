@@ -658,6 +658,7 @@ class $modify(BotPlayLayer, PlayLayer) {
 		// passive attempt clips: a new attempt begins here (practice checkpoint respawns
 		// trim the open clip instead - clips.cpp decides)
 		if (g_bot.state == BotState::Idle) clips::onAttemptStart(this);
+		hud::noteRunStart(this->getCurrentPercent()); // HUD "Run From" (start pos / checkpoint)
 
 		if (g_bot.state == BotState::Recording) {
 			if (m_player1) m_player1->m_isDashing = false; // dash orbs otherwise carry over (Eclipse does this too)
@@ -721,6 +722,7 @@ class $modify(BotPlayLayer, PlayLayer) {
 
 	void levelComplete() {
 		clips::onComplete(this); // finalize the passive clip (no-op while the bot drove)
+		hud::noteRunEnd(100.f);  // session Best Run
 		PlayLayer::levelComplete();
 		if (g_bot.state == BotState::Recording) {
 			bot::saveSession();
@@ -740,6 +742,7 @@ class $modify(BotPlayLayer, PlayLayer) {
 		if (g_bot.state == BotState::Recording) bot::saveSession();
 		setState(BotState::Idle, this);
 		clips::onQuit(this); // keep the unfinished attempt as a clip
+		hacks::restoreForcedPlatformer(); // undo the GJGameLevel mutation (force platformer)
 		g_bot.stepper = false;
 		bot::setTimeScale(1.f);
 		PlayLayer::onQuit();
@@ -747,9 +750,17 @@ class $modify(BotPlayLayer, PlayLayer) {
 };
 
 // autosave the session every time you pause while recording (protects against crashes)
+// + "Hide Pause Menu": auto-resume after a short grace period (you can still catch the
+// GDM bubble in that window; if the GDMenu popup is open, we never resume under it)
 class $modify(BotAutosavePause, PauseLayer) {
 	void customSetup() {
 		PauseLayer::customSetup();
 		if (g_bot.state == BotState::Recording) bot::saveSession();
+		if (Mod::get()->getSettingValue<bool>("hide-pause"))
+			this->scheduleOnce(schedule_selector(BotAutosavePause::autoResume), 0.8f);
+	}
+	void autoResume(float) {
+		if (g_menuOpenCount > 0) return; // the user opened GDMenu from the bubble
+		this->keyBackClicked();          // = the back button: closes pause and resumes
 	}
 };
