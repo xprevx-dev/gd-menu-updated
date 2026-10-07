@@ -242,7 +242,19 @@ class $modify(HackScheduler, CCScheduler) {
 
 class $modify(HackGameLayer, GJBaseGameLayer) {
 	// physics-bypass accumulator: leftover real time that hasn't been stepped yet
-	struct Fields { float physAcc = 0.f; };
+	// + frame-extrapolation state (visual-only, per player):
+	//   velocity is derived numerically from physics positions (works in every
+	//   gamemode incl. wave/ship and needs no member semantics), the applied
+	//   offset is removed again at the TOP of the next update() so physics never
+	//   sees extrapolated positions.
+	struct Fields {
+		float physAcc = 0.f;
+		CCPoint prevPos[2] = { { 0.f, 0.f }, { 0.f, 0.f } };
+		CCPoint vel[2] = { { 0.f, 0.f }, { 0.f, 0.f } };     // units per second
+		CCPoint applied[2] = { { 0.f, 0.f }, { 0.f, 0.f } }; // offset currently on the sprite
+		bool havePrev[2] = { false, false };
+		bool extrapolating = false;
+	};
 
 	void updateDebugDraw() {
 		bool old = m_isDebugDrawEnabled;
@@ -251,7 +263,21 @@ class $modify(HackGameLayer, GJBaseGameLayer) {
 		m_isDebugDrawEnabled = old;
 	}
 
+	// undo last frame's visual offset before ANY physics runs (stepper, bypass or vanilla)
+	void restoreExtrapolation() {
+		if (!m_fields->extrapolating) return;
+		auto pl = PlayLayer::get();
+		if (pl && static_cast<GJBaseGameLayer*>(pl) == this) {
+			PlayerObject* ps[2] = { pl->m_player1, pl->m_player2 };
+			for (int i = 0; i < 2; i++)
+				if (ps[i]) ps[i]->setPosition(ps[i]->getPosition() - m_fields->applied[i]);
+		}
+		m_fields->applied[0] = m_fields->applied[1] = { 0.f, 0.f };
+		m_fields->extrapolating = false;
+	}
+
 	void update(float dt) {
+		restoreExtrapolation();
 		// frame stepper: freeze unless a step was requested
 		if (g_bot.stepper && g_bot.state != BotState::Resuming && PlayLayer::get()
 			&& static_cast<GJBaseGameLayer*>(PlayLayer::get()) == this) {
@@ -275,6 +301,36 @@ class $modify(HackGameLayer, GJBaseGameLayer) {
 				GJBaseGameLayer::update(STEP);
 				m_fields->physAcc -= STEP;
 				n++;
+			}
+			// frame extrapolation (Mega Hack style): on displays that aren't 240 Hz the
+			// substep count alternates (1,2,2,1... at 144 Hz; 0 on some frames above
+			// 240 Hz), which reads as judder. Nudge the players forward by velocity *
+			// leftover-time - purely visual, clamped, removed before the next step.
+			auto pl = PlayLayer::get();
+			PlayerObject* ps[2] = { pl->m_player1, pl->m_player2 };
+			if (n > 0) {
+				for (int i = 0; i < 2; i++) {
+					if (!ps[i]) continue;
+					CCPoint p = ps[i]->getPosition();
+					if (m_fields->havePrev[i])
+						m_fields->vel[i] = (p - m_fields->prevPos[i]) / (n * STEP);
+					m_fields->prevPos[i] = p;
+					m_fields->havePrev[i] = true;
+				}
+			}
+			if (Mod::get()->getSettingValue<bool>("frame-extrapolation")) {
+				float t = std::min(m_fields->physAcc, STEP);
+				for (int i = 0; i < 2; i++) {
+					if (!ps[i] || ps[i]->m_isDead || !m_fields->havePrev[i]) continue;
+					CCPoint off = m_fields->vel[i] * t;
+					float len = off.getLength();
+					if (len > 8.f) off = off * (8.f / len); // teleports/spikes: one small nudge max
+					if (len > 0.0001f) {
+						ps[i]->setPosition(ps[i]->getPosition() + off);
+						m_fields->applied[i] = off;
+						m_fields->extrapolating = true;
+					}
+				}
 			}
 			return;
 		}

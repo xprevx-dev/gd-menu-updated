@@ -315,6 +315,12 @@
 			"name": "Physics Bypass (Experimental)",
 			"description": "Run physics at a fixed 240 ticks per second regardless of your monitor FPS (CBF / xdBot style bypass). Below ~15 render FPS the game slows down instead of skipping frames. Counts as a cheat for Safe Mode."
 		},
+		"frame-extrapolation": {
+			"type": "bool",
+			"default": false,
+			"name": "Frame Extrapolation",
+			"description": "Smooths player motion while Physics Bypass is on and your display isn't 240 Hz (e.g. 144 Hz or 360 Hz): predicts the players' visual position for the leftover fraction of a tick (Mega Hack style). Visual only and hard-clamped - extrapolated positions are removed again before the next physics step, so physics never sees them. Requires Physics Bypass."
+		},
 		"free-attempts": {
 			"type": "bool",
 			"default": false,

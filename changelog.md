@@ -6,6 +6,7 @@ The biggest feature drop yet: 18 new settings, a searchable Hacks tab and a new 
 - **All Passable (experimental)** - fall straight through blocks and solids; hazards still kill (pair with noclip for full ghost mode).
 - **Jump Hack (infinite jumps)** - hold jump mid-air to keep re-jumping and hover upward.
 - **Physics Bypass (experimental)** - physics runs at a fixed 240 ticks/s regardless of your monitor FPS (CBF/xdBot style). Composes with speedhack; below ~15 render FPS the game slows down instead of skipping (spiral guard).
+- **Frame Extrapolation** (Mega Hack style) - smooths player motion while Physics Bypass runs on a non-240 Hz display (the 1,2,2,1... substep judder at 144 Hz, frozen frames above 240 Hz): players are nudged forward by velocity × leftover-tick-time, purely visually. The nudge is removed again before every physics step and hard-clamped, so physics never sees extrapolated positions. Requires Physics Bypass.
 - **Free Attempts** - the on-screen attempt counter stays at 1 (cosmetic; your real stats are untouched).
 - **Force Platformer (experimental)** - play ANY level in platformer mode; the shared level object is restored when you quit.
 - **Auto Practice Mode** - practice mode turns itself on when a level starts.
