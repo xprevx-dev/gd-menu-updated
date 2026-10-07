@@ -21,13 +21,28 @@ static enumKeyCodes keyFromSetting(char const* id) {
 
 void hacks::reloadSettings() {
 	g_hacks.speed       = (float)Mod::get()->getSettingValue<double>("speedhack");
-	g_hacks.kToggleStep = keyFromSetting("toggle-stepper-key");
-	g_hacks.kStep       = keyFromSetting("step-key");
-	g_hacks.kNoclip     = keyFromSetting("noclip-key");
-	g_hacks.kHitbox     = keyFromSetting("hitbox-key");
-	g_hacks.kSpeed      = keyFromSetting("speed-key");
-	g_hacks.kSpPrev     = keyFromSetting("startpos-prev-key");
-	g_hacks.kSpNext     = keyFromSetting("startpos-next-key");
+	struct KeySlot { char const* id; enumKeyCodes* slot; char const* label; };
+	KeySlot keys[] = {
+		{ "toggle-stepper-key", &g_hacks.kToggleStep, "Toggle stepper" },
+		{ "step-key",           &g_hacks.kStep,       "Step one frame" },
+		{ "noclip-key",         &g_hacks.kNoclip,     "Noclip" },
+		{ "hitbox-key",         &g_hacks.kHitbox,     "Hitboxes" },
+		{ "speed-key",          &g_hacks.kSpeed,      "Speedhack" },
+		{ "startpos-prev-key",  &g_hacks.kSpPrev,     "Previous start pos" },
+		{ "startpos-next-key",  &g_hacks.kSpNext,     "Next start pos" },
+	};
+	for (auto& k : keys) *k.slot = keyFromSetting(k.id);
+	// two actions on one key would both fire; keep the first and disable the rest, loudly
+	g_hacks.keyConflict.clear();
+	for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+		for (size_t j = i + 1; j < sizeof(keys) / sizeof(keys[0]); j++) {
+			if (*keys[i].slot != KEY_None && *keys[i].slot == *keys[j].slot) {
+				*keys[j].slot = KEY_None;
+				g_hacks.keyConflict = fmt::format("\"{}\" and \"{}\" use the same key - {} was disabled. Fix it in Settings.",
+					keys[i].label, keys[j].label, keys[j].label);
+			}
+		}
+	}
 }
 
 // ---------------------------------------------------------------- actions
@@ -193,10 +208,10 @@ class $modify(HackPlayLayer, PlayLayer) {
 		if (obj->m_objectID == 31) g_hacks.startPositions.push_back(static_cast<StartPosObject*>(obj));
 	}
 
-	void destroyPlayer(PlayerObject* player, GameObject* obj) {
-		if (g_hacks.noclip && obj != m_anticheatSpike) return;
-		PlayLayer::destroyPlayer(player, obj);
-	}
+	// NOTE: destroyPlayer used to be hooked here AND in extras.cpp. Two hooks on the same
+	// function in one mod run in an order Geode doesn't promise, and the noclip hook here
+	// swallowed the call before extras' hook could count accuracy. It now lives in exactly
+	// one place: ExtrasPlayLayer::destroyPlayer in extras.cpp.
 
 	void postUpdate(float dt) {
 		PlayLayer::postUpdate(dt);
@@ -208,6 +223,15 @@ class $modify(HackPlayLayer, PlayLayer) {
 };
 
 // ---------------------------------------------------------------- PC keybinds (hidden, no UI during gameplay)
+// Settings used to be read once per level start, so editing a keybind in Settings did
+// nothing until you re-entered the level. Now every settings change applies instantly.
+$on_mod(Loaded) {
+	geode::listenForAllSettingChanges([](std::string_view, std::shared_ptr<geode::SettingV3>) {
+		hacks::reloadSettings();
+		hacks::updateStepperControls();
+	});
+}
+
 #ifndef GEODE_IS_IOS
 class $modify(CCKeyboardDispatcher) {
 	bool dispatchKeyboardMSG(enumKeyCodes key, bool down, bool repeat, double time) {

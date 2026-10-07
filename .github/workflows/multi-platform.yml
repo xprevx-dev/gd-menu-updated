@@ -7,6 +7,17 @@ on:
       - "**"
 
 jobs:
+  tests:
+    name: Core tests (host)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fast host-side unit + fuzz tests for the serialization core (no Geode SDK needed).
+      # Catches corrupt-file crashes before the slow native builds even start.
+      - name: Run core tests
+        run: bash tests/run_tests.sh
+
   build:
     strategy:
       fail-fast: false

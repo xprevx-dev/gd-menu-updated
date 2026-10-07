@@ -1,11 +1,10 @@
 // Bot: recording, playback, resume sessions and GDR2 (.gdr2 / .gdbot) replay files.
+// All byte-level serialization lives in src/core/replay_io.hpp (unit-tested there).
 #include "state.hpp"
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/PauseLayer.hpp>
-#include <gdr/gdr.hpp>
 #include <fstream>
-#include <cmath>
 #include <span>
 
 BotData g_bot;
@@ -113,6 +112,24 @@ namespace {
 	std::filesystem::path sessionPath(int levelID) {
 		return Mod::get()->getSaveDir() / "sessions" / fmt::format("{}.gdm", levelID);
 	}
+
+	bool readSessionFile(int levelID, gdm::Session& out) {
+		std::ifstream f(sessionPath(levelID), std::ios::binary);
+		if (!f) return false;
+		return gdm::readSession(f, out);
+	}
+
+	std::string lower(std::string s) {
+		for (auto& c : s) c = (char)std::tolower((unsigned char)c);
+		return s;
+	}
+
+	bool readFile(std::filesystem::path const& p, std::vector<uint8_t>& out) {
+		std::ifstream f(p, std::ios::binary);
+		if (!f) return false;
+		out.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+		return true;
+	}
 }
 
 int bot::frame() {
@@ -158,6 +175,7 @@ void bot::stop() {
 	auto was = g_bot.state;
 	setState(BotState::Idle);
 	bot::setTimeScale(1.f);
+	g_bot.pendingSteps = 0;
 	if (auto pl = PlayLayer::get()) releaseAll(pl);
 	if (was == BotState::Recording) notify(fmt::format("Recording stopped ({} inputs)", g_bot.inputs.size()));
 	else if (was != BotState::Idle) notify("Playback stopped");
@@ -183,78 +201,17 @@ void bot::clear() {
 }
 
 // ---------------------------------------------------------------- sessions
-// Binary: "GDMS" u32 version, i32 resumeFrame, f32 percent, u32 count, then count * {i32 frame, u8 button, u8 down, u8 p2}
-static void writeFixes(std::ostream& f, std::vector<FrameFix> const& fixes) {
-	auto w = [&](auto v) { f.write(reinterpret_cast<char const*>(&v), sizeof(v)); };
-	w(uint32_t(fixes.size()));
-	for (auto& x : fixes) {
-		w(int32_t(x.frame)); w(uint8_t(x.hasP2));
-		for (auto* p : { &x.p1, &x.p2 }) { w(p->x); w(p->y); w(p->rot); w(p->xVel); w(p->yVel); }
-	}
-}
-static void readFixes(std::istream& f, std::vector<FrameFix>& fixes) {
-	auto r = [&](auto& v) { f.read(reinterpret_cast<char*>(&v), sizeof(v)); return (bool)f; };
-	fixes.clear();
-	uint32_t n;
-	if (!r(n)) return;
-	fixes.reserve(n);
-	for (uint32_t k = 0; k < n; k++) {
-		FrameFix x; int32_t fr; uint8_t h;
-		if (!r(fr) || !r(h)) break;
-		x.frame = fr; x.hasP2 = h != 0;
-		bool ok = true;
-		for (auto* p : { &x.p1, &x.p2 }) ok = ok && r(p->x) && r(p->y) && r(p->rot) && r(p->xVel) && r(p->yVel);
-		if (!ok) break;
-		fixes.push_back(x);
-	}
-}
-
 void bot::saveSession() {
 	auto pl = PlayLayer::get();
 	if (!pl || g_bot.inputs.empty()) return;
 	auto path = sessionPath(g_bot.levelID);
 	std::error_code ec;
 	std::filesystem::create_directories(path.parent_path(), ec);
-	std::ofstream f(path, std::ios::binary);
+	std::ofstream f(path, std::ios::binary | std::ios::trunc);
 	if (!f) return;
-	auto w = [&](auto v) { f.write(reinterpret_cast<char const*>(&v), sizeof(v)); };
-	f.write("GDMS", 4);
-	w(uint32_t(3));
-	w(int32_t(bot::frame()));
-	w(float(pl->getCurrentPercent()));
-	w(uint32_t(g_bot.inputs.size()));
-	for (auto& i : g_bot.inputs) {
-		w(int32_t(i.frame)); w(uint8_t(i.button)); w(uint8_t(i.down)); w(uint8_t(i.player2));
-		w(uint8_t(i.phys)); w(i.x); w(i.y); w(i.rot); w(i.xVel); w(i.yVel);
-	}
+	gdm::writeSession(f, bot::frame(), (float)pl->getCurrentPercent(), g_bot.inputs);
 	std::ofstream ff(fixesPath(g_bot.levelID), std::ios::binary | std::ios::trunc);
-	if (ff) writeFixes(ff, g_bot.fixes);
-}
-
-static bool readSession(int levelID, int& resumeFrame, float& percent, std::vector<BotInput>* out, size_t& count) {
-	std::ifstream f(sessionPath(levelID), std::ios::binary);
-	if (!f) return false;
-	char magic[4]; f.read(magic, 4);
-	if (std::string_view(magic, 4) != "GDMS") return false;
-	auto r = [&](auto& v) { f.read(reinterpret_cast<char*>(&v), sizeof(v)); return (bool)f; };
-	uint32_t ver, n; int32_t rf; float pc;
-	if (!r(ver) || !r(rf) || !r(pc) || !r(n)) return false;
-	resumeFrame = rf; percent = pc; count = n;
-	if (!out) return true;
-	out->clear();
-	out->reserve(n);
-	for (uint32_t k = 0; k < n; k++) {
-		int32_t fr; uint8_t b, d, p;
-		if (!r(fr) || !r(b) || !r(d) || !r(p)) break;
-		BotInput in{ fr, b, d != 0, p != 0 };
-		if (ver >= 3) {
-			uint8_t ph;
-			if (!r(ph) || !r(in.x) || !r(in.y) || !r(in.rot) || !r(in.xVel) || !r(in.yVel)) break;
-			in.phys = ph != 0;
-		}
-		out->push_back(in);
-	}
-	return true;
+	if (ff) gdm::writeFixes(ff, g_bot.fixes);
 }
 
 bool bot::hasSession(int levelID) {
@@ -262,8 +219,11 @@ bool bot::hasSession(int levelID) {
 }
 
 bool bot::sessionInfo(int levelID, float& percent, size_t& inputs) {
-	int rf;
-	return readSession(levelID, rf, percent, nullptr, inputs);
+	gdm::Session s;
+	if (!readSessionFile(levelID, s)) return false;
+	percent = s.percent;
+	inputs = s.inputs.size();
+	return true;
 }
 
 void bot::deleteSession(int levelID) {
@@ -275,15 +235,19 @@ void bot::deleteSession(int levelID) {
 bool bot::resumeSession() {
 	auto pl = PlayLayer::get();
 	if (!pl) return false;
-	size_t n;
-	if (!readSession(g_bot.levelID, g_bot.resumeFrame, g_bot.lastPercent, &g_bot.inputs, n) || g_bot.resumeFrame <= 0) {
+	gdm::Session s;
+	if (!readSessionFile(g_bot.levelID, s) || s.resumeFrame <= 0) {
 		notify("No session to resume", NotificationIcon::Warning);
 		return false;
 	}
+	g_bot.resumeFrame = s.resumeFrame;
+	g_bot.lastPercent = s.percent;
+	g_bot.inputs = std::move(s.inputs);
 	std::erase_if(g_bot.inputs, [](BotInput const& i) { return i.frame > g_bot.resumeFrame; });
 	{
 		std::ifstream ff(fixesPath(g_bot.levelID), std::ios::binary);
-		if (ff) readFixes(ff, g_bot.fixes); else g_bot.fixes.clear();
+		if (ff) gdm::readFixes(ff, g_bot.fixes);
+		else g_bot.fixes.clear();
 		std::erase_if(g_bot.fixes, [](FrameFix const& x) { return x.frame > g_bot.resumeFrame; });
 	}
 	g_bot.fixIndex = 0;
@@ -296,71 +260,6 @@ bool bot::resumeSession() {
 }
 
 // ---------------------------------------------------------------- replay files
-namespace {
-	// Same tag + byte layout as gdr's standard PhysicsInput ("Phys"), but fields default to NaN
-	// so we can tell whether a loaded file actually had physics data.
-	struct GDMInput : gdr::Input<"Phys"> {
-		float xPosition = NAN, yPosition = NAN, rotation = 0.f;
-		double xVelocity = 0.0, yVelocity = 0.0;
-		GDMInput() = default;
-		GDMInput(uint64_t frame, uint8_t button, bool player2, bool down, float x, float y, float rot, double xv, double yv)
-			: Input(frame, button, player2, down), xPosition(x), yPosition(y), rotation(rot), xVelocity(xv), yVelocity(yv) {}
-		void parseExtension(binary_reader& reader) override {
-			reader >> xPosition >> yPosition >> rotation >> xVelocity >> yVelocity;
-		}
-		void saveExtension(binary_writer& writer) const override {
-			writer << xPosition << yPosition << rotation << xVelocity << yVelocity;
-		}
-	};
-
-	struct GDMReplay : gdr::Replay<GDMReplay, GDMInput> {
-		std::vector<FrameFix> fixes;
-		GDMReplay() : Replay("GDMenu", 4) {}
-
-		void saveExtension(binary_writer& w) const override {
-			w << (uint64_t)fixes.size();
-			for (auto& x : fixes) {
-				w << (uint64_t)x.frame << x.hasP2;
-				for (auto* p : { &x.p1, &x.p2 }) w << p->x << p->y << p->rot << p->xVel << p->yVel;
-			}
-		}
-		void parseExtension(binary_reader& r) override {
-			uint64_t n = 0;
-			r >> n;
-			fixes.clear();
-			fixes.reserve((size_t)std::min<uint64_t>(n, 50'000'000));
-			for (uint64_t k = 0; k < n; k++) {
-				FrameFix x; uint64_t fr;
-				r >> fr >> x.hasP2;
-				for (auto* p : { &x.p1, &x.p2 }) r >> p->x >> p->y >> p->rot >> p->xVel >> p->yVel;
-				x.frame = (int)fr;
-				fixes.push_back(x);
-			}
-		}
-		bool shouldParseExtension() const override {
-			return botInfo.name == "GDMenu" && botInfo.version >= 4;
-		}
-	};
-
-	std::string lower(std::string s) {
-		for (auto& c : s) c = (char)std::tolower((unsigned char)c);
-		return s;
-	}
-
-	bool readFile(std::filesystem::path const& p, std::vector<uint8_t>& out) {
-		std::ifstream f(p, std::ios::binary);
-		if (!f) return false;
-		out.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
-		return true;
-	}
-
-	std::string sanitize(std::string name) {
-		std::erase_if(name, [](char c) { return std::string_view("\\/:*?\"<>|").find(c) != std::string_view::npos || (unsigned char)c < 32; });
-		while (!name.empty() && (name.back() == ' ' || name.back() == '.')) name.pop_back();
-		return name.empty() ? "replay" : name;
-	}
-}
-
 std::filesystem::path replays::dir() {
 	auto d = Mod::get()->getSaveDir() / "replays";
 	std::error_code ec;
@@ -380,7 +279,8 @@ std::vector<replays::Info> replays::list() {
 		info.name = e.path().filename().string();
 		std::vector<uint8_t> bytes;
 		if (readFile(e.path(), bytes)) {
-			auto res = GDMReplay::importData(std::span<uint8_t>(bytes));
+			// safeImport: a corrupt/truncated file becomes "invalid" instead of a crash
+			auto res = gdm::safeImport(std::span<uint8_t>(bytes));
 			if (res.isOk()) {
 				auto& r = res.unwrap();
 				info.valid = true;
@@ -397,7 +297,7 @@ std::vector<replays::Info> replays::list() {
 }
 
 bool replays::exists(std::string const& name, std::string const& ext) {
-	return std::filesystem::exists(dir() / (sanitize(name) + ext));
+	return std::filesystem::exists(dir() / (gdm::sanitizeFileName(name) + ext));
 }
 
 std::filesystem::path replays::eclipseDir() {
@@ -411,7 +311,7 @@ bool replays::eclipseInstalled() {
 bool replays::save(std::string name, std::string const& ext, bool copyToEclipse) {
 	if (g_bot.inputs.empty()) { notify("Nothing to save - record first", NotificationIcon::Warning); return false; }
 
-	GDMReplay r;
+	gdm::GDMReplay r;
 	r.author = std::string(GJAccountManager::get()->m_username);
 	r.description = "Recorded with GDMenu";
 	r.gameVersion = GEODE_COMP_GD_VERSION;
@@ -436,7 +336,7 @@ bool replays::save(std::string name, std::string const& ext, bool copyToEclipse)
 
 	auto data = r.exportData();
 	if (data.isErr()) { notify("Save failed: " + data.unwrapErr(), NotificationIcon::Error); return false; }
-	auto path = dir() / (sanitize(name) + ext);
+	auto path = dir() / (gdm::sanitizeFileName(name) + ext);
 	auto& bytes = data.unwrap();
 	std::ofstream f(path, std::ios::binary | std::ios::trunc);
 	if (!f) { notify("Couldn't write file", NotificationIcon::Error); return false; }
@@ -448,7 +348,7 @@ bool replays::save(std::string name, std::string const& ext, bool copyToEclipse)
 		// Eclipse only lists .gdr2/.gdr files in ITS OWN folder, so drop a .gdr2 copy there
 		std::error_code ec;
 		std::filesystem::create_directories(eclipseDir(), ec);
-		auto epath = eclipseDir() / (sanitize(name) + ".gdr2");
+		auto epath = eclipseDir() / (gdm::sanitizeFileName(name) + ".gdr2");
 		std::ofstream ef(epath, std::ios::binary | std::ios::trunc);
 		if (ef) {
 			ef.write(reinterpret_cast<char const*>(bytes.data()), (std::streamsize)bytes.size());
@@ -465,7 +365,7 @@ bool replays::save(std::string name, std::string const& ext, bool copyToEclipse)
 bool replays::load(std::filesystem::path const& path) {
 	std::vector<uint8_t> bytes;
 	if (!readFile(path, bytes)) { notify("Couldn't open file", NotificationIcon::Error); return false; }
-	auto res = GDMReplay::importData(std::span<uint8_t>(bytes));
+	auto res = gdm::safeImport(std::span<uint8_t>(bytes));
 	if (res.isErr()) { notify("Not a GDR2 replay: " + res.unwrapErr(), NotificationIcon::Error); return false; }
 	auto& r = res.unwrap();
 
@@ -520,7 +420,7 @@ class $modify(BotGameLayer, GJBaseGameLayer) {
 		// GDR2 doesn't store the button in non-platformer levels (everything reads back as JUMP),
 		// so recording left/right there turns into phantom jumps in Eclipse and on reload.
 		if (button != 1 && !m_isPlatformer) return;
-		if (m_player1->m_isDead) return;
+		if (!m_player1 || m_player1->m_isDead) return;
 
 		bool& held = g_bot.held[player2][button];
 		if (held == down) return; // skip key-repeat duplicates
@@ -537,7 +437,7 @@ class $modify(BotGameLayer, GJBaseGameLayer) {
 
 		// recording: remember exactly where the player is after every tick
 		if (g_bot.state == BotState::Recording) {
-			if (m_player1->m_isDead) return;
+			if (!m_player1 || m_player1->m_isDead) return;
 			FrameFix x;
 			x.frame = frame;
 			x.p1 = capture(m_player1);
@@ -601,7 +501,6 @@ class $modify(BotPlayLayer, PlayLayer) {
 		if (id != g_bot.levelID) { // keep a loaded replay when re-entering the same level
 			g_bot.inputs.clear();
 			g_bot.fixes.clear();
-	g_bot.fixes.clear();
 			g_bot.loadedName.clear();
 		}
 		g_bot.levelID = id;
@@ -616,7 +515,7 @@ class $modify(BotPlayLayer, PlayLayer) {
 		int frame = (int)m_gameState.m_currentProgress;
 
 		if (g_bot.state == BotState::Recording) {
-			m_player1->m_isDashing = false; // dash orbs otherwise carry over (Eclipse does this too)
+			if (m_player1) m_player1->m_isDashing = false; // dash orbs otherwise carry over (Eclipse does this too)
 			if (m_player2) m_player2->m_isDashing = false;
 
 			// drop everything at/after the respawn point
@@ -658,8 +557,9 @@ class $modify(BotPlayLayer, PlayLayer) {
 			setState(BotState::Idle);
 			notify("Level complete! Pause > GDMenu > Save Bot to keep it", NotificationIcon::Success);
 		}
-		else if (g_bot.state == BotState::Playing) {
+		else if (g_bot.state == BotState::Playing || g_bot.state == BotState::Resuming) {
 			setState(BotState::Idle);
+			bot::setTimeScale(1.f);
 		}
 	}
 

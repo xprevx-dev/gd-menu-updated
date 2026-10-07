@@ -5,33 +5,13 @@
 #include <string>
 #include <vector>
 
+// Plain-data replay types + all serialization live in the Geode-free core so they
+// can be unit-tested on a desktop compiler (see tests/).
+#include "core/replay_io.hpp"
+
 using namespace geode::prelude;
 
 // ---------------------------------------------------------------- bot
-struct BotInput {
-	int frame;     // physics tick (m_gameState.m_currentProgress) - same frame base Eclipse/xdBot use for GDR2
-	int button;    // 1 = jump, 2 = left, 3 = right
-	bool down;
-	bool player2;  // true ONLY for the second player in 2-player levels (GDR2 convention)
-	// "Phys" extension (GDR2 PhysicsInput): player state right before the input.
-	// Playback snaps the player to this, so tiny drift (e.g. from practice respawns) can't build up.
-	bool phys = false;
-	float x = 0.f, y = 0.f, rot = 0.f;
-	double xVel = 0.0, yVel = 0.0;
-};
-
-// Per-tick player state recorded while recording; playback snaps to it every tick so the
-// run follows the exact recorded path (kills practice-mode drift completely).
-struct PlayerFix {
-	float x = 0.f, y = 0.f, rot = 0.f;
-	double xVel = 0.0, yVel = 0.0;
-};
-struct FrameFix {
-	int frame = 0;
-	PlayerFix p1, p2;
-	bool hasP2 = false;
-};
-
 enum class BotState { Idle, Recording, Playing, Resuming };
 
 struct BotData {
@@ -67,6 +47,7 @@ struct HackData {
 	bool accuracy = false;        // noclip accuracy + deaths label (only shown if enabled)
 	int accTicks = 0, accDeadTicks = 0, accDeaths = 0;
 	bool accHitThisTick = false, accWasHit = false;
+	std::string keyConflict;      // "" or a warning shown in the Keys tab when two actions share a key
 	std::vector<Ref<StartPosObject>> startPositions; // sorted by X
 	int startPosIndex = -1;                           // -1 = level start
 	enumKeyCodes kToggleStep = KEY_None, kStep = KEY_None, kNoclip = KEY_None, kHitbox = KEY_None,

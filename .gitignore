@@ -62,3 +62,5 @@ build-*/
 # CLion
 .idea/
 /cmake-build-*/
+# test dependencies (fetched by tests/run_tests.sh)
+.deps/

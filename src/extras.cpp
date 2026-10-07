@@ -162,8 +162,14 @@ class $modify(ExtrasPlayLayer, PlayLayer) {
 		if (!m_isPracticeMode || m_checkpointArray->count() == 0) resetAccuracy();
 	}
 
+	// The ONLY destroyPlayer hook in the mod (the old twin hook in hacks.cpp ran in an
+	// unspecified order relative to this one and could swallow the call before accuracy
+	// was counted - or, worse, let a noclip player die).
 	void destroyPlayer(PlayerObject* player, GameObject* obj) {
-		if (g_hacks.noclip && obj != m_anticheatSpike) g_hacks.accHitThisTick = true;
+		if (g_hacks.noclip && obj != m_anticheatSpike) {
+			g_hacks.accHitThisTick = true; // noclip saved you this tick
+			return;
+		}
 		if (g_hacks.safeMode && g_hacks.cheatedAttempt) {
 			bool old = m_isTestMode;
 			m_isTestMode = true;  // test mode = GD won't save a new best %
