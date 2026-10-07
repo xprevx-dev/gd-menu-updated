@@ -171,6 +171,153 @@ public:
 	}
 };
 
+// ---------------------------------------------------------------- rename dialog
+class RenamePopup : public Popup {
+protected:
+	TextInput* m_input = nullptr;
+	std::filesystem::path m_path;
+	std::function<void()> m_onDone;
+
+	bool init(std::filesystem::path path, std::function<void()> onDone) {
+		if (!Popup::init(300.f, 150.f)) return false;
+		m_path = std::move(path);
+		m_onDone = std::move(onDone);
+		this->setTitle("Rename Bot");
+		auto size = m_mainLayer->getContentSize();
+		m_input = TextInput::create(240.f, "New name");
+		m_input->setPosition({ size.width / 2, size.height - 70.f });
+		m_input->setMaxCharCount(48);
+		m_input->setString(m_path.stem().string());
+		m_mainLayer->addChild(m_input);
+		auto ok = button("Rename", "GJ_button_01.png", this, menu_selector(RenamePopup::onOk), 90, 0.75f);
+		ok->setPosition({ size.width / 2, 30.f });
+		m_buttonMenu->addChild(ok);
+		return true;
+	}
+	void onOk(CCObject*) {
+		auto name = gdm::sanitizeFileName(m_input->getString());
+		auto target = m_path.parent_path() / (name + m_path.extension().string());
+		std::error_code ec;
+		if (target == m_path) { this->onClose(nullptr); return; }
+		if (std::filesystem::exists(target)) { notify("A bot with that name already exists", NotificationIcon::Warning); return; }
+		std::filesystem::rename(m_path, target, ec);
+		if (ec) { notify("Rename failed: " + ec.message(), NotificationIcon::Error); return; }
+		if (g_bot.loadedName == m_path.filename().string()) g_bot.loadedName = target.filename().string();
+		notify("Renamed to " + name, NotificationIcon::Success);
+		if (m_onDone) m_onDone();
+		this->onClose(nullptr);
+	}
+public:
+	static RenamePopup* create(std::filesystem::path path, std::function<void()> onDone) {
+		auto ret = new RenamePopup();
+		if (ret->init(std::move(path), std::move(onDone))) { ret->autorelease(); return ret; }
+		delete ret;
+		return nullptr;
+	}
+};
+
+// ---------------------------------------------------------------- sessions manager
+class SessionsPopup : public Popup {
+protected:
+	std::function<void(int)> m_onResume;
+	std::function<void()> m_onChanged;
+
+	bool init(std::function<void(int)> onResume, std::function<void()> onChanged) {
+		if (!Popup::init(360.f, 260.f)) return false;
+		m_onResume = std::move(onResume);
+		m_onChanged = std::move(onChanged);
+		this->setTitle("Saved Sessions");
+		auto size = m_mainLayer->getContentSize();
+
+		auto sessions = bot::listSessions();
+		auto scroll = ScrollLayer::create({ size.width - 30.f, size.height - 105.f });
+		scroll->setPosition({ 15.f, 48.f });
+		m_mainLayer->addChild(scroll);
+		float rowH = 38.f;
+		float listH = scroll->getContentSize().height;
+		float total = std::max(listH, rowH * sessions.size() + 4.f);
+		scroll->m_contentLayer->setContentSize({ size.width - 30.f, total });
+
+		if (sessions.empty()) {
+			auto none = label("No saved sessions.\nQuit while recording and one appears here.", "chatFont.fnt", 0.6f, SUBTLE);
+			none->setAlignment(kCCTextAlignmentCenter);
+			none->setPosition({ (size.width - 30.f) / 2, listH / 2 });
+			scroll->m_contentLayer->addChild(none);
+		}
+		auto rowMenu = CCMenu::create();
+		rowMenu->setPosition({ 0, 0 });
+		scroll->m_contentLayer->addChild(rowMenu, 2);
+
+		float y = total - rowH / 2 - 2.f;
+		for (auto& s : sessions) {
+			auto bg = card({ size.width - 38.f, rowH - 4.f }, 60);
+			bg->setPosition({ (size.width - 30.f) / 2, y });
+			scroll->m_contentLayer->addChild(bg);
+			auto t = label(fmt::format("Level {}", s.levelID), "bigFont.fnt", 0.42f);
+			t->setAnchorPoint({ 0, 0.5f });
+			t->setPosition({ 12.f, y + 8.f });
+			scroll->m_contentLayer->addChild(t);
+			auto d = label(fmt::format("{:.1f}%   {} inputs", s.percent, s.inputs), "chatFont.fnt", 0.5f, SUBTLE);
+			d->setAnchorPoint({ 0, 0.5f });
+			d->setPosition({ 12.f, y - 8.f });
+			scroll->m_contentLayer->addChild(d);
+			if (s.levelID == g_bot.levelID && PlayLayer::get()) {
+				auto res = button("Resume", "GJ_button_02.png", this, menu_selector(SessionsPopup::onResume), 60, 0.6f);
+				res->setTag(s.levelID);
+				res->setPosition({ size.width - 85.f, y });
+				rowMenu->addChild(res);
+			}
+			auto del = button("X", "GJ_button_06.png", this, menu_selector(SessionsPopup::onDelete), 20, 0.6f);
+			del->setTag(s.levelID);
+			del->setPosition({ size.width - 40.f, y });
+			rowMenu->addChild(del);
+			y -= rowH;
+		}
+		scroll->scrollToTop();
+
+		auto clear = button("Clear All", "GJ_button_04.png", this, menu_selector(SessionsPopup::onClear), 90, 0.6f);
+		clear->setPosition({ size.width / 2, 22.f });
+		m_buttonMenu->addChild(clear);
+		return true;
+	}
+	void onResume(CCObject* s) {
+		int id = static_cast<CCNode*>(s)->getTag();
+		this->onClose(nullptr);
+		if (m_onResume) m_onResume(id);
+	}
+	void onDelete(CCObject* s) {
+		int id = static_cast<CCNode*>(s)->getTag();
+		Ref<SessionsPopup> self = this;
+		createQuickPopup("Delete session?", fmt::format("The saved session for level <cy>{}</c> will be gone.", id),
+			"Cancel", "Delete", [self, id](FLAlertLayer*, bool ok) {
+				if (!ok) return;
+				bot::deleteSession(id);
+				if (self->m_onChanged) self->m_onChanged();
+				self->onClose(nullptr);
+				if (auto next = SessionsPopup::create(self->m_onResume, self->m_onChanged)) next->show();
+			});
+	}
+	void onClear(CCObject*) {
+		Ref<SessionsPopup> self = this;
+		createQuickPopup("Clear all sessions?", "Every saved resume point for every level will be deleted.",
+			"Cancel", "Clear", [self](FLAlertLayer*, bool ok) {
+				if (!ok) return;
+				bot::clearAllSessions();
+				notify("All sessions deleted", NotificationIcon::Success);
+				if (self->m_onChanged) self->m_onChanged();
+				self->onClose(nullptr);
+				if (auto next = SessionsPopup::create(self->m_onResume, self->m_onChanged)) next->show();
+			});
+	}
+public:
+	static SessionsPopup* create(std::function<void(int)> onResume, std::function<void()> onChanged) {
+		auto ret = new SessionsPopup();
+		if (ret->init(std::move(onResume), std::move(onChanged))) { ret->autorelease(); return ret; }
+		delete ret;
+		return nullptr;
+	}
+};
+
 // ---------------------------------------------------------------- main panel
 class GDMenuPopup : public Popup {
 protected:
@@ -271,6 +418,14 @@ protected:
 			case TabMore:  buildMoreTab(); break;
 			case TabStyle: buildStyleTab(); break;
 		}
+		// soft slide+fade when switching tabs
+		m_content->setCascadeOpacityEnabled(true);
+		m_content->setOpacity(0);
+		m_content->setPosition(m_areaOrigin - CCPoint(0.f, 6.f));
+		m_content->runAction(CCSpawn::create(
+			CCFadeIn::create(0.12f),
+			CCEaseOut::create(CCMoveTo::create(0.12f, m_areaOrigin), 2.f),
+			nullptr));
 	}
 
 	CCMenu* contentMenu() {
@@ -293,6 +448,15 @@ protected:
 		auto bg = card({ w, 38.f }, 60);
 		bg->setPosition({ m_area.width / 2, y });
 		m_content->addChild(bg);
+
+		// thin accent strip on the left edge of active rows
+		if (on) {
+			auto bar = CCDrawNode::create();
+			auto acc = ccc4f(ACCENT.r / 255.f, ACCENT.g / 255.f, ACCENT.b / 255.f, 0.9f);
+			bar->drawRect(CCPoint(0.f, -19.f), CCPoint(3.f, 19.f), acc, 0.f, acc);
+			bar->setPosition({ 8.f, y });
+			m_content->addChild(bar);
+		}
 
 		auto t = label(title, "bigFont.fnt", 0.42f, on ? ccColor3B{ 140, 255, 140 } : ccColor3B{ 255, 255, 255 });
 		t->setAnchorPoint({ 0, 0.5f });
@@ -385,40 +549,100 @@ protected:
 			menu->addChild(resume);
 			menu->addChild(del);
 		}
+
+		// manager for every saved resume point on disk (all levels)
+		auto sessions = button(fmt::format("Sessions ({})", bot::listSessions().size()), "GJ_button_04.png",
+			this, menu_selector(GDMenuPopup::onSessions), 110, 0.6f);
+		sessions->setPosition({ W / 2, 95.f });
+		menu->addChild(sessions);
+	}
+
+	void onLoop(CCObject*) {
+		Mod::get()->setSettingValue<bool>("loop-playback", !Mod::get()->getSettingValue<bool>("loop-playback"));
+		refresh();
+	}
+	void onStopPct(CCObject* s) {
+		float v = (float)Mod::get()->getSettingValue<double>("stop-percent") + stepOf(s);
+		v = std::clamp(std::round(v), 0.f, 100.f);
+		Mod::get()->setSettingValue<double>("stop-percent", v);
+		refresh();
 	}
 
 	// ------------------------------------------------------------ Bots tab (replays folder)
+	static inline std::string s_filter;   // search box text (survives tab switches)
+	static inline int s_sortMode = 0;     // 0 name, 1 newest, 2 inputs
+	ScrollLayer* m_botsScroll = nullptr;
+
+	static char const* sortName() { return s_sortMode == 0 ? "Name" : s_sortMode == 1 ? "Newest" : "Inputs"; }
+
 	void buildBotsTab() {
 		auto menu = contentMenu();
 		float W = m_area.width, H = m_area.height;
 
 		heading("Bots", H - 16.f);
-		auto path = label("geode/mods/cyber39dreamgd.gdmenu/replays", "chatFont.fnt", 0.5f, SUBTLE);
-		path->setAnchorPoint({ 1, 0.5f });
-		fit(path, W - 80.f, 0.5f);
-		path->setPosition({ W - 12.f, H - 16.f });
-		m_content->addChild(path);
+
+		// controls: search box + sort cycle
+		auto search = TextInput::create(W - 130.f, "Search bots...");
+		search->setPosition({ (W - 130.f) / 2 + 4.f, H - 40.f });
+		search->setMaxCharCount(40);
+		if (!s_filter.empty()) search->setString(s_filter);
+		search->setCallback([this](std::string const& s) { s_filter = s; this->rebuildBotsList(); });
+		m_content->addChild(search);
+		auto sort = button(fmt::format("Sort: {}", sortName()), "GJ_button_04.png", this, menu_selector(GDMenuPopup::onSort), 80, 0.55f);
+		sort->setPosition({ W - 55.f, H - 40.f });
+		menu->addChild(sort);
+
+		m_botsScroll = ScrollLayer::create({ W - 16.f, H - 96.f });
+		m_botsScroll->setPosition({ 8.f, 36.f });
+		m_content->addChild(m_botsScroll);
+		rebuildBotsList();
+
+		auto folder = button("Open Folder", "GJ_button_05.png", this, menu_selector(GDMenuPopup::onFolder), 90, 0.65f);
+		folder->setPosition({ W / 2 - 60.f, 18.f });
+		auto refresh = button("Refresh", "GJ_button_04.png", this, menu_selector(GDMenuPopup::onRefresh), 70, 0.65f);
+		refresh->setPosition({ W / 2 + 65.f, 18.f });
+		menu->addChild(folder);
+		menu->addChild(refresh);
+	}
+
+	void onSort(CCObject*) { s_sortMode = (s_sortMode + 1) % 3; refresh(); }
+
+	// Rebuilds only the list (keeps the search box focused while typing).
+	void rebuildBotsList() {
+		if (!m_botsScroll) return;
+		float W = m_area.width;
+		float listH = m_botsScroll->getContentSize().height;
+		m_botsScroll->m_contentLayer->removeAllChildren();
 
 		auto files = replays::list();
-		float listH = H - 72.f;
-		auto scroll = ScrollLayer::create({ W - 16.f, listH });
-		scroll->setPosition({ 8.f, 40.f });
-		m_content->addChild(scroll);
+		auto low = [](std::string const& s) {
+			std::string o = s;
+			for (auto& c : o) c = (char)std::tolower((unsigned char)c);
+			return o;
+		};
+		if (!s_filter.empty()) {
+			auto f = low(s_filter);
+			std::erase_if(files, [&](auto& i) { return low(i.name).find(f) == std::string::npos && low(i.levelName).find(f) == std::string::npos; });
+		}
+		if (s_sortMode == 1) std::sort(files.begin(), files.end(), [](auto& a, auto& b) { return a.written > b.written; });
+		else if (s_sortMode == 2) std::sort(files.begin(), files.end(), [](auto& a, auto& b) { return a.inputs > b.inputs; });
 
 		float rowH = 42.f;
 		float total = std::max(listH, rowH * files.size() + 4.f);
-		scroll->m_contentLayer->setContentSize({ W - 16.f, total });
+		m_botsScroll->m_contentLayer->setContentSize({ W - 16.f, total });
 
 		if (files.empty()) {
-			auto none = label("No bots yet!\nRecord one and press Save Bot,\nor drop .gdr2 / .gdbot files in the folder.", "chatFont.fnt", 0.65f, SUBTLE);
+			auto none = label(s_filter.empty()
+				? "No bots yet!\nRecord one and press Save Bot,\nor drop .gdr2 / .gdbot files in the folder."
+				: "Nothing matches your search.", "chatFont.fnt", 0.65f, SUBTLE);
 			none->setAlignment(kCCTextAlignmentCenter);
 			none->setPosition({ (W - 16.f) / 2, listH / 2 });
-			scroll->m_contentLayer->addChild(none);
+			m_botsScroll->m_contentLayer->addChild(none);
 		}
 
 		auto rowMenu = CCMenu::create();
 		rowMenu->setPosition({ 0, 0 });
-		scroll->m_contentLayer->addChild(rowMenu, 2);
+		m_botsScroll->m_contentLayer->addChild(rowMenu, 2);
 
 		float y = total - rowH / 2 - 2.f;
 		for (auto& f : files) {
@@ -426,43 +650,42 @@ protected:
 			auto bg = card({ W - 24.f, rowH - 4.f }, isLoaded ? 110 : 60);
 			if (isLoaded) static_cast<NineSlice*>(bg)->setColor({ 20, 60, 30 });
 			bg->setPosition({ (W - 16.f) / 2, y });
-			scroll->m_contentLayer->addChild(bg);
+			m_botsScroll->m_contentLayer->addChild(bg);
 
 			auto name = label(f.name, "bigFont.fnt", 0.4f, f.valid ? ccColor3B{ 255, 255, 255 } : ccColor3B{ 255, 120, 120 });
 			name->setAnchorPoint({ 0, 0.5f });
-			fit(name, W - 140.f, 0.4f);
+			fit(name, W - 165.f, 0.4f);
 			name->setPosition({ 12.f, y + 8.f });
-			scroll->m_contentLayer->addChild(name);
+			m_botsScroll->m_contentLayer->addChild(name);
 
 			std::string sub = f.valid
-				? fmt::format("{} inputs  |  {}  |  {}", f.inputs, formatTime(f.duration), f.levelName.empty() ? "?" : f.levelName)
-				: "Unsupported / old GDR1 file";
+				? fmt::format("{}  |  {} inputs  |  {}  |  {} KB{}", f.levelName.empty() ? "?" : f.levelName, f.inputs,
+					formatTime(f.duration), f.size / 1024, f.hasPhys ? "  |  phys" : "")
+				: "Unsupported / corrupt / old GDR1 file";
 			auto subLbl = label(sub, "chatFont.fnt", 0.5f, SUBTLE);
 			subLbl->setAnchorPoint({ 0, 0.5f });
-			fit(subLbl, W - 140.f, 0.5f);
+			fit(subLbl, W - 165.f, 0.5f);
 			subLbl->setPosition({ 12.f, y - 8.f });
-			scroll->m_contentLayer->addChild(subLbl);
+			m_botsScroll->m_contentLayer->addChild(subLbl);
 
 			auto load = button(isLoaded ? "Loaded" : "Load", isLoaded ? "GJ_button_04.png" : "GJ_button_01.png",
 				this, menu_selector(GDMenuPopup::onLoadBot), 50, 0.6f);
 			load->setUserObject(CCString::create(f.path.string()));
-			load->setPosition({ W - 90.f, y });
+			load->setPosition({ W - 105.f, y });
 			rowMenu->addChild(load);
+
+			auto ren = button("R", "GJ_button_05.png", this, menu_selector(GDMenuPopup::onRenameBot), 20, 0.6f);
+			ren->setUserObject(CCString::create(f.path.string()));
+			ren->setPosition({ W - 62.f, y });
+			rowMenu->addChild(ren);
 
 			auto del = button("X", "GJ_button_06.png", this, menu_selector(GDMenuPopup::onDeleteBot), 20, 0.6f);
 			del->setUserObject(CCString::create(f.path.string()));
-			del->setPosition({ W - 40.f, y });
+			del->setPosition({ W - 30.f, y });
 			rowMenu->addChild(del);
 			y -= rowH;
 		}
-		scroll->scrollToTop();
-
-		auto folder = button("Open Folder", "GJ_button_05.png", this, menu_selector(GDMenuPopup::onFolder), 90, 0.65f);
-		folder->setPosition({ W / 2 - 60.f, 20.f });
-		auto refresh = button("Refresh", "GJ_button_04.png", this, menu_selector(GDMenuPopup::onRefresh), 70, 0.65f);
-		refresh->setPosition({ W / 2 + 65.f, 20.f });
-		menu->addChild(folder);
-		menu->addChild(refresh);
+		m_botsScroll->scrollToTop();
 	}
 
 	// ------------------------------------------------------------ Hacks tab
@@ -527,11 +750,17 @@ protected:
 		menu->addChild(prev);
 		menu->addChild(next);
 
-		// resume speed info
-		auto rs = label(fmt::format("Resume fast-forward speed: {:.1f}x  (change in Keys > Settings)",
+		// playback options
+		toggleRow(menu, 80.f, "Loop Playback", "Restart automatically when the bot dies",
+			Mod::get()->getSettingValue<bool>("loop-playback"), menu_selector(GDMenuPopup::onLoop));
+		stepperRow(menu, 44.f, "Stop playback at %",
+			fmt::format("{:.0f}", Mod::get()->getSettingValue<double>("stop-percent")),
+			{ { "-10", -10.f }, { "-1", -1.f }, { "+1", 1.f }, { "+10", 10.f } }, menu_selector(GDMenuPopup::onStopPct));
+
+		auto rs = label(fmt::format("Resume fast-forward speed: {:.1f}x  (Settings)",
 			Mod::get()->getSettingValue<double>("resume-speed")), "chatFont.fnt", 0.55f, SUBTLE);
 		fit(rs, W - 20.f, 0.55f);
-		rs->setPosition({ W / 2, 30.f });
+		rs->setPosition({ W / 2, 14.f });
 		m_content->addChild(rs);
 	}
 
@@ -655,12 +884,27 @@ protected:
 			a->setAnchorPoint({ 0, 0.5f });
 			a->setPosition({ 20.f, y });
 			m_content->addChild(a);
-			auto k = label(Mod::get()->getSettingValue<std::string>(r.key), "bigFont.fnt", 0.4f, ACCENT);
+			auto v = Mod::get()->getSettingValue<std::vector<Keybind>>(r.key);
+			std::string shown;
+			for (auto& b : v) shown += (shown.empty() ? "" : " / ") + b.toString();
+			if (shown.empty()) shown = "not set";
+			auto k = label(shown, "bigFont.fnt", 0.4f, v.empty() ? SUBTLE : ACCENT);
+			fit(k, 130.f, 0.4f);
 			k->setAnchorPoint({ 1, 0.5f });
 			k->setPosition({ W - 20.f, y });
 			m_content->addChild(k);
 			y -= 20.f;
 		}
+		if (!g_hacks.keyConflict.empty()) {
+			auto warn = label(g_hacks.keyConflict, "chatFont.fnt", 0.55f, { 255, 120, 120 });
+			fit(warn, W - 24.f, 0.55f);
+			warn->setPosition({ W / 2, 52.f });
+			m_content->addChild(warn);
+		}
+		auto hint = label("Click a keybind in Settings to capture a new key", "chatFont.fnt", 0.5f, SUBTLE);
+		fit(hint, W - 24.f, 0.5f);
+		hint->setPosition({ W / 2, 40.f });
+		m_content->addChild(hint);
 		auto settings = button("Settings", "GJ_button_05.png", this, menu_selector(GDMenuPopup::onSettings), 70, 0.65f);
 		settings->setPosition({ W / 2 - 65.f, 22.f });
 		auto resetBtn = button("Reset Button Pos", "GJ_button_04.png", this, menu_selector(GDMenuPopup::onResetButton), 100, 0.6f);
@@ -730,6 +974,37 @@ protected:
 		refresh();
 	}
 
+	void onRenameBot(CCObject* sender) {
+		std::string path = static_cast<CCString*>(static_cast<CCNode*>(sender)->getUserObject())->getCString();
+		Ref<GDMenuPopup> self = this;
+		RenamePopup::create(path, [self] { self->refresh(); })->show();
+	}
+
+	void onLoop(CCObject*) {
+		Mod::get()->setSettingValue<bool>("loop-playback", !Mod::get()->getSettingValue<bool>("loop-playback"));
+		refresh();
+	}
+	void onStopPct(CCObject* s) {
+		float v = (float)Mod::get()->getSettingValue<double>("stop-percent") + stepOf(s);
+		v = std::clamp(std::round(v), 0.f, 100.f);
+		Mod::get()->setSettingValue<double>("stop-percent", (double)v);
+		refresh();
+	}
+
+	void onSessions(CCObject*) {
+		Ref<GDMenuPopup> self = this;
+		SessionsPopup::create(
+			[self](int id) {
+				if (id != g_bot.levelID || !PlayLayer::get()) {
+					notify("Open that level first, then resume from its pause menu", NotificationIcon::Warning);
+					return;
+				}
+				self->closeAndResume();
+				bot::resumeSession();
+			},
+			[self] { self->refresh(); })->show();
+	}
+
 	void onDeleteBot(CCObject* sender) {
 		std::string path = static_cast<CCString*>(static_cast<CCNode*>(sender)->getUserObject())->getCString();
 		Ref<GDMenuPopup> self = this;
@@ -767,7 +1042,7 @@ protected:
 	CCPoint m_touchStart, m_nodeStart;
 	bool m_dragged = false;
 
-	bool init(PauseLayer*) {
+	bool init() {
 		if (!CCLayer::init()) return false;
 		this->setID("floating-button"_spr);
 		this->ignoreAnchorPointForPosition(false);
@@ -865,6 +1140,11 @@ protected:
 			CCEaseSineInOut::create(CCMoveBy::create(1.4f, { 0, 2.f })),
 			CCEaseSineInOut::create(CCMoveBy::create(1.4f, { 0, -2.f })), nullptr)));
 
+		// ...and a heartbeat pulse while recording so you never forget it's on
+		if (g_bot.state == BotState::Recording)
+			m_body->runAction(CCRepeatForever::create(CCSequence::create(
+				CCEaseSineInOut::create(CCScaleTo::create(0.6f, 1.07f)),
+				CCEaseSineInOut::create(CCScaleTo::create(0.6f, 1.0f)), nullptr)));
 	}
 
 	void clampToScreen() {
@@ -925,9 +1205,9 @@ protected:
 	void ccTouchCancelled(CCTouch* t, CCEvent* e) override { ccTouchEnded(t, e); }
 
 public:
-	static FloatingButton* create(PauseLayer* pause) {
+	static FloatingButton* create() {
 		auto ret = new FloatingButton();
-		if (ret->init(pause)) { ret->autorelease(); return ret; }
+		if (ret->init()) { ret->autorelease(); return ret; }
 		delete ret;
 		return nullptr;
 	}
@@ -936,11 +1216,10 @@ public:
 void GDMenuPopup::onResetButton(CCObject*) {
 	Mod::get()->setSavedValue<float>("btn-x", 0.93f);
 	Mod::get()->setSavedValue<float>("btn-y", 0.82f);
-	if (true)
-		if (auto btn = OverlayManager::get()->getChildByID("floating-button"_spr)) {
-			auto win = CCDirector::get()->getWinSize();
-			btn->setPosition({ 0.93f * win.width, 0.82f * win.height });
-		}
+	if (auto btn = OverlayManager::get()->getChildByID("floating-button"_spr)) {
+		auto win = CCDirector::get()->getWinSize();
+		btn->setPosition({ 0.93f * win.width, 0.82f * win.height });
+	}
 	notify("Button moved back to the top right");
 }
 
@@ -951,7 +1230,7 @@ void GDMenuPopup::onResetButton(CCObject*) {
 static void ensureBubble() {
 	auto overlay = OverlayManager::get();
 	if (!overlay->getChildByID("floating-button"_spr))
-		if (auto btn = FloatingButton::create(nullptr)) overlay->addChild(btn, 1000);
+		if (auto btn = FloatingButton::create()) overlay->addChild(btn, 1000);
 }
 
 $on_mod(Loaded) {

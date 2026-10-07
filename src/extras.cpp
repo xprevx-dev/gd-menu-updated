@@ -196,7 +196,8 @@ class $modify(ExtrasPlayLayer, PlayLayer) {
 		PlayLayer::postUpdate(dt);
 		auto l = m_fields->acc;
 		if (!l) return;
-		bool show = g_hacks.accuracy && g_hacks.noclip;
+		// when the in-game HUD is on it draws accuracy itself (as part of the stack)
+		bool show = g_hacks.accuracy && g_hacks.noclip && !hud::enabled();
 		l->setVisible(show);
 		if (!show) return;
 		float acc = g_hacks.accTicks ? 100.f * (1.f - (float)g_hacks.accDeadTicks / g_hacks.accTicks) : 100.f;

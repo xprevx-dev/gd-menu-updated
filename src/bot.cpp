@@ -4,7 +4,9 @@
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/PauseLayer.hpp>
+#include <algorithm>
 #include <fstream>
+#include <map>
 #include <span>
 
 BotData g_bot;
@@ -232,6 +234,41 @@ void bot::deleteSession(int levelID) {
 	std::filesystem::remove(sessionPath(levelID), ec);
 }
 
+std::vector<bot::SessionInfo> bot::listSessions() {
+	std::vector<SessionInfo> out;
+	auto dir = Mod::get()->getSaveDir() / "sessions";
+	std::error_code ec;
+	for (auto& e : std::filesystem::directory_iterator(dir, ec)) {
+		if (!e.is_regular_file() || lower(e.path().extension().string()) != ".gdm") continue;
+		int id = 0;
+		try { id = std::stoi(e.path().stem().string()); }
+		catch (...) { continue; }
+		gdm::Session s;
+		{
+			std::ifstream f(e.path(), std::ios::binary);
+			if (!f || !gdm::readSession(f, s)) continue; // corrupt session: skip, never crash
+		}
+		SessionInfo info;
+		info.levelID = id;
+		info.path = e.path();
+		info.percent = s.percent;
+		info.inputs = s.inputs.size();
+		info.written = (uint64_t)e.last_write_time(ec).time_since_epoch().count();
+		out.push_back(std::move(info));
+	}
+	std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return a.written > b.written; });
+	return out;
+}
+
+void bot::clearAllSessions() {
+	auto dir = Mod::get()->getSaveDir() / "sessions";
+	std::error_code ec;
+	for (auto& e : std::filesystem::directory_iterator(dir, ec)) {
+		auto ext = lower(e.path().extension().string());
+		if (ext == ".gdm" || ext == ".gdmf") std::filesystem::remove(e.path(), ec);
+	}
+}
+
 bool bot::resumeSession() {
 	auto pl = PlayLayer::get();
 	if (!pl) return false;
@@ -268,6 +305,9 @@ std::filesystem::path replays::dir() {
 }
 
 std::vector<replays::Info> replays::list() {
+	// Parsing every replay on each open is slow once the library grows, so parsed results
+	// are cached per file and only re-read when the file's size or write time changes.
+	static std::map<std::filesystem::path, Info> s_cache;
 	std::vector<Info> out;
 	std::error_code ec;
 	for (auto& e : std::filesystem::directory_iterator(dir(), ec)) {
@@ -277,20 +317,40 @@ std::vector<replays::Info> replays::list() {
 		Info info;
 		info.path = e.path();
 		info.name = e.path().filename().string();
-		std::vector<uint8_t> bytes;
-		if (readFile(e.path(), bytes)) {
-			// safeImport: a corrupt/truncated file becomes "invalid" instead of a crash
-			auto res = gdm::safeImport(std::span<uint8_t>(bytes));
-			if (res.isOk()) {
-				auto& r = res.unwrap();
-				info.valid = true;
-				info.inputs = r.inputs.size();
-				info.levelName = r.levelInfo.name;
-				info.author = r.author;
-				info.duration = r.duration;
+		info.size = (uint64_t)e.file_size(ec);
+		info.written = (uint64_t)e.last_write_time(ec).time_since_epoch().count();
+		auto it = s_cache.find(info.path);
+		if (it != s_cache.end() && it->second.size == info.size && it->second.written == info.written) {
+			info.levelName = it->second.levelName;
+			info.author = it->second.author;
+			info.inputs = it->second.inputs;
+			info.duration = it->second.duration;
+			info.valid = it->second.valid;
+			info.hasPhys = it->second.hasPhys;
+		}
+		else {
+			std::vector<uint8_t> bytes;
+			if (readFile(e.path(), bytes)) {
+				// safeImport: a corrupt/truncated file becomes "invalid" instead of a crash
+				auto res = gdm::safeImport(std::span<uint8_t>(bytes));
+				if (res.isOk()) {
+					auto& r = res.unwrap();
+					info.valid = true;
+					info.inputs = r.inputs.size();
+					info.levelName = r.levelInfo.name;
+					info.author = r.author;
+					info.duration = r.duration;
+					info.hasPhys = !r.inputs.empty() && !std::isnan(r.inputs[0].xPosition);
+				}
 			}
+			s_cache[info.path] = info;
 		}
 		out.push_back(std::move(info));
+	}
+	for (auto it = s_cache.begin(); it != s_cache.end();) {
+		bool gone = std::none_of(out.begin(), out.end(), [&](auto& i) { return i.path == it->first; });
+		if (gone) it = s_cache.erase(it);
+		else ++it;
 	}
 	std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return lower(a.name) < lower(b.name); });
 	return out;
@@ -471,6 +531,16 @@ class $modify(BotGameLayer, GJBaseGameLayer) {
 			pressRaw(this, in.down, in.button, in.player2);
 		}
 
+		// "Stop Playback At %": bail out automatically, handy for drilling one section
+		if (g_bot.state == BotState::Playing) {
+			float stopPct = (float)Mod::get()->getSettingValue<double>("stop-percent");
+			if (stopPct > 0.f && pl->getCurrentPercent() >= stopPct) {
+				bot::stop();
+				notify(fmt::format("Playback stopped at {:.1f}%", stopPct));
+				return;
+			}
+		}
+
 		if (g_bot.state == BotState::Resuming && frame >= g_bot.resumeFrame) {
 			// reached where you left off: hand control back and keep recording
 			setState(BotState::Recording);
@@ -489,6 +559,8 @@ class $modify(BotGameLayer, GJBaseGameLayer) {
 };
 
 class $modify(BotPlayLayer, PlayLayer) {
+	struct Fields { float deadTime = 0.f; };
+
 	bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
 		setState(BotState::Idle);
 		g_bot.playIndex = 0;
@@ -548,6 +620,23 @@ class $modify(BotPlayLayer, PlayLayer) {
 			while (g_bot.playIndex < g_bot.inputs.size() && g_bot.inputs[g_bot.playIndex].frame < frame)
 				g_bot.playIndex++;
 		}
+	}
+
+	// "Loop Playback": when the bot dies, restart the attempt automatically so you can
+	// watch it run over and over. Resets before GD's death popup appears; if the popup
+	// wins the race (m_isPaused), the normal retry path still resumes playback correctly.
+	void postUpdate(float dt) {
+		PlayLayer::postUpdate(dt);
+		bool looping = g_bot.state == BotState::Playing && !m_isPaused &&
+		               Mod::get()->getSettingValue<bool>("loop-playback");
+		if (looping && m_player1 && m_player1->m_isDead) {
+			m_fields->deadTime += dt;
+			if (m_fields->deadTime > 0.8f) {
+				m_fields->deadTime = 0.f;
+				this->resetLevel();
+			}
+		}
+		else m_fields->deadTime = 0.f;
 	}
 
 	void levelComplete() {

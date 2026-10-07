@@ -8,24 +8,26 @@
 	},
 	"id": "cyber39dreamgd.gdmenu",
 	"name": "GDMenu",
-	"version": "v2.4.1",
+	"version": "v2.5.0",
 	"developer": "Cyber39DreamGD",
-	"description": "Bot (GDR2 / .gdbot, resume where you left off), frame stepper, noclip, speedhack, hitboxes, start-pos switcher.",
+	"description": "Bot (GDR2 / .gdbot, resume where you left off), frame stepper, noclip, speedhack, hitboxes, start-pos switcher, optional in-game HUD.",
 	"dependencies": {
 		"geode.node-ids": ">=v1.23.3"
 	},
 	"settings": {
 		"step-key": {
-			"type": "string",
+			"type": "keybind",
 			"default": "G",
+			"category": "gameplay",
 			"name": "Frame Step Key",
-			"description": "Key that advances one frame while the frame stepper is on (single letter)."
+			"description": "Advances one frame while the frame stepper is on. Hold to keep stepping. Click it in Settings to capture any key, modifier combo or mouse button."
 		},
 		"toggle-stepper-key": {
-			"type": "string",
+			"type": "keybind",
 			"default": "F",
+			"category": "gameplay",
 			"name": "Toggle Stepper Key",
-			"description": "Key that turns the frame stepper on/off (single letter)."
+			"description": "Turns the frame stepper on/off."
 		},
 		"resume-speed": {
 			"type": "float",
@@ -44,34 +46,39 @@
 			"description": "Game speed when Speedhack is on."
 		},
 		"noclip-key": {
-			"type": "string",
+			"type": "keybind",
 			"default": "N",
+			"category": "gameplay",
 			"name": "Noclip Key",
-			"description": "PC key to toggle noclip."
+			"description": "Toggles noclip."
 		},
 		"hitbox-key": {
-			"type": "string",
+			"type": "keybind",
 			"default": "H",
+			"category": "gameplay",
 			"name": "Hitbox Key",
-			"description": "PC key to toggle hitboxes."
+			"description": "Toggles hitboxes."
 		},
 		"speed-key": {
-			"type": "string",
+			"type": "keybind",
 			"default": "S",
+			"category": "gameplay",
 			"name": "Speedhack Key",
-			"description": "PC key to toggle speedhack."
+			"description": "Toggles speedhack."
 		},
 		"startpos-prev-key": {
-			"type": "string",
+			"type": "keybind",
 			"default": "Q",
+			"category": "gameplay",
 			"name": "StartPos Previous Key",
-			"description": "PC key for previous start position."
+			"description": "Previous start position."
 		},
 		"startpos-next-key": {
-			"type": "string",
+			"type": "keybind",
 			"default": "E",
+			"category": "gameplay",
 			"name": "StartPos Next Key",
-			"description": "PC key for next start position."
+			"description": "Next start position."
 		},
 		"hud-scale": {
 			"type": "float",
@@ -90,7 +97,71 @@
 				"never"
 			],
 			"name": "Stepper Touch Buttons",
-			"description": "+1 / +10 / Play buttons shown ONLY while the frame stepper is on. 'auto' = phones only. Nothing else is ever shown during gameplay."
+			"description": "+1 / +10 / Play buttons shown ONLY while the frame stepper is on. 'auto' = phones only."
+		},
+		"hud-enabled": {
+			"type": "bool",
+			"default": false,
+			"name": "In-Game HUD",
+			"description": "Small overlay while you play: bot state, frame, percent and speed. Off by default so gameplay stays clean - GDMenu is otherwise invisible in game."
+		},
+		"hud-anchor": {
+			"type": "string",
+			"default": "bottom-left",
+			"one-of": [
+				"bottom-left",
+				"top-left",
+				"top-right",
+				"bottom-right"
+			],
+			"name": "HUD Corner",
+			"description": "Which screen corner the in-game HUD sits in."
+		},
+		"hud-size": {
+			"type": "float",
+			"default": 1.0,
+			"min": 0.5,
+			"max": 1.5,
+			"name": "HUD Size",
+			"description": "Scale of the in-game HUD text."
+		},
+		"hud-show-state": {
+			"type": "bool",
+			"default": true,
+			"name": "HUD: Bot State",
+			"description": "Show RECORDING / PLAYING / RESUMING (only while the bot is active)."
+		},
+		"hud-show-frame": {
+			"type": "bool",
+			"default": true,
+			"name": "HUD: Frame",
+			"description": "Show the current physics tick (240 per second)."
+		},
+		"hud-show-percent": {
+			"type": "bool",
+			"default": true,
+			"name": "HUD: Percent",
+			"description": "Show the attempt's current percent."
+		},
+		"hud-show-speed": {
+			"type": "bool",
+			"default": true,
+			"name": "HUD: Speed",
+			"description": "Show game speed while speedhack or resume fast-forward is active."
+		},
+		"loop-playback": {
+			"type": "bool",
+			"default": false,
+			"name": "Loop Playback",
+			"description": "While a bot is playing, automatically restart the attempt when it dies, so you can watch it run over and over."
+		},
+		"stop-percent": {
+			"type": "float",
+			"default": 0.0,
+			"min": 0.0,
+			"max": 100.0,
+			"name": "Stop Playback At %",
+			"description": "Playback stops automatically at this percent. 0 = disabled. Handy for practising a section."
 		},
 		"practice-fix": {
 			"type": "bool",

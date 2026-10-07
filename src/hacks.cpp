@@ -3,25 +3,20 @@
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/CCScheduler.hpp>
-#ifndef GEODE_IS_IOS
-#include <Geode/modify/CCKeyboardDispatcher.hpp>
-#endif
 
 HackData g_hacks;
 
 // ---------------------------------------------------------------- settings
-static enumKeyCodes keyFromSetting(char const* id) {
-	auto s = Mod::get()->getSettingValue<std::string>(id);
-	if (s.empty()) return KEY_None;
-	char c = (char)std::toupper((unsigned char)s[0]);
-	if (c >= 'A' && c <= 'Z') return (enumKeyCodes)(KEY_A + (c - 'A'));
-	if (c >= '0' && c <= '9') return (enumKeyCodes)(KEY_Zero + (c - '0'));
-	return KEY_None;
+// Keybinds are native Geode keybind settings since v2.5.0: the Settings popup gives a
+// proper capture UI (any key, modifiers, mouse buttons) instead of the old single
+// letter strings, and Geode fires press events for us (no keyboard hook needed).
+static std::vector<Keybind> binds(std::string_view id) {
+	return Mod::get()->getSettingValue<std::vector<Keybind>>(id);
 }
 
 void hacks::reloadSettings() {
-	g_hacks.speed       = (float)Mod::get()->getSettingValue<double>("speedhack");
-	struct KeySlot { char const* id; enumKeyCodes* slot; char const* label; };
+	g_hacks.speed = (float)Mod::get()->getSettingValue<double>("speedhack");
+	struct KeySlot { char const* id; std::vector<Keybind>* slot; char const* label; };
 	KeySlot keys[] = {
 		{ "toggle-stepper-key", &g_hacks.kToggleStep, "Toggle stepper" },
 		{ "step-key",           &g_hacks.kStep,       "Step one frame" },
@@ -31,13 +26,17 @@ void hacks::reloadSettings() {
 		{ "startpos-prev-key",  &g_hacks.kSpPrev,     "Previous start pos" },
 		{ "startpos-next-key",  &g_hacks.kSpNext,     "Next start pos" },
 	};
-	for (auto& k : keys) *k.slot = keyFromSetting(k.id);
-	// two actions on one key would both fire; keep the first and disable the rest, loudly
+	for (auto& k : keys) *k.slot = binds(k.id);
+	// the same combo on two actions would fire both; keep the first, disable the rest, say so
 	g_hacks.keyConflict.clear();
 	for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
 		for (size_t j = i + 1; j < sizeof(keys) / sizeof(keys[0]); j++) {
-			if (*keys[i].slot != KEY_None && *keys[i].slot == *keys[j].slot) {
-				*keys[j].slot = KEY_None;
+			bool clash = false;
+			for (auto& a : *keys[i].slot)
+				for (auto& b : *keys[j].slot)
+					if (a.key != KEY_None && a == b) clash = true;
+			if (clash) {
+				keys[j].slot->clear();
 				g_hacks.keyConflict = fmt::format("\"{}\" and \"{}\" use the same key - {} was disabled. Fix it in Settings.",
 					keys[i].label, keys[j].label, keys[j].label);
 			}
@@ -200,6 +199,9 @@ class $modify(HackPlayLayer, PlayLayer) {
 			[](auto& a, auto& b) { return a->getPositionX() < b->getPositionX(); });
 		for (int i = 0; i < (int)g_hacks.startPositions.size(); i++)
 			if (g_hacks.startPositions[i].data() == m_startPosObject) g_hacks.startPosIndex = i;
+		// the touch step bar lives on m_uiLayer, which is recreated per attempt: re-add it
+		// when restarting while the stepper is still on (it used to vanish until re-toggled)
+		hacks::updateStepperControls();
 		return true;
 	}
 
@@ -222,32 +224,30 @@ class $modify(HackPlayLayer, PlayLayer) {
 	}
 };
 
-// ---------------------------------------------------------------- PC keybinds (hidden, no UI during gameplay)
-// Settings used to be read once per level start, so editing a keybind in Settings did
-// nothing until you re-entered the level. Now every settings change applies instantly.
+// ---------------------------------------------------------------- keybind presses
+// Settings used to be read once per level start, so editing a key did nothing until you
+// re-entered the level. Now every settings change applies instantly, and one listener
+// receives every GDMenu keybind press (Geode skips text inputs and gives us down/repeat,
+// so holding the step key keeps stepping).
 $on_mod(Loaded) {
 	geode::listenForAllSettingChanges([](std::string_view, std::shared_ptr<geode::SettingV3>) {
 		hacks::reloadSettings();
 		hacks::updateStepperControls();
 	});
-}
-
-#ifndef GEODE_IS_IOS
-class $modify(CCKeyboardDispatcher) {
-	bool dispatchKeyboardMSG(enumKeyCodes key, bool down, bool repeat, double time) {
-		auto pl = PlayLayer::get();
-		if (down && key != KEY_None && pl && !pl->m_isPaused) {
-			if (key == g_hacks.kStep && g_bot.stepper) { hacks::stepFrames(1); return true; } // hold = keep stepping
-			if (!repeat) {
-				if (key == g_hacks.kToggleStep) { hacks::toggleStepper();     return true; }
-				if (key == g_hacks.kNoclip)     { hacks::toggleNoclip();      return true; }
-				if (key == g_hacks.kHitbox)     { hacks::toggleHitboxes();    return true; }
-				if (key == g_hacks.kSpeed)      { hacks::toggleSpeed();       return true; }
-				if (key == g_hacks.kSpPrev)     { hacks::switchStartPos(-1);  return true; }
-				if (key == g_hacks.kSpNext)     { hacks::switchStartPos(1);   return true; }
+	geode::listenForAllKeybindSettingPresses(
+		[](std::string_view key, geode::Keybind const&, bool down, bool repeat, double) {
+			auto pl = PlayLayer::get();
+			if (!pl || pl->m_isPaused) return;
+			if (key == "step-key") {
+				if (down && g_bot.stepper) hacks::stepFrames(1);
+				return;
 			}
-		}
-		return CCKeyboardDispatcher::dispatchKeyboardMSG(key, down, repeat, time);
-	}
-};
-#endif
+			if (!down || repeat) return;
+			if (key == "toggle-stepper-key") hacks::toggleStepper();
+			else if (key == "noclip-key")    hacks::toggleNoclip();
+			else if (key == "hitbox-key")    hacks::toggleHitboxes();
+			else if (key == "speed-key")     hacks::toggleSpeed();
+			else if (key == "startpos-prev-key") hacks::switchStartPos(-1);
+			else if (key == "startpos-next-key") hacks::switchStartPos(1);
+		});
+}

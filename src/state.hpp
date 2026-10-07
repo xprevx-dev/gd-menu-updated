@@ -48,10 +48,9 @@ struct HackData {
 	int accTicks = 0, accDeadTicks = 0, accDeaths = 0;
 	bool accHitThisTick = false, accWasHit = false;
 	std::string keyConflict;      // "" or a warning shown in the Keys tab when two actions share a key
+	std::vector<Keybind> kToggleStep, kStep, kNoclip, kHitbox, kSpeed, kSpPrev, kSpNext;
 	std::vector<Ref<StartPosObject>> startPositions; // sorted by X
 	int startPosIndex = -1;                           // -1 = level start
-	enumKeyCodes kToggleStep = KEY_None, kStep = KEY_None, kNoclip = KEY_None, kHitbox = KEY_None,
-		kSpeed = KEY_None, kSpPrev = KEY_None, kSpNext = KEY_None;
 };
 extern HackData g_hacks;
 
@@ -76,6 +75,25 @@ namespace bot {
 	void deleteSession(int levelID);
 
 	void setTimeScale(float s);
+
+	// every saved resume session on disk (Tools tab manager)
+	struct SessionInfo {
+		int levelID = 0;
+		float percent = 0.f;
+		size_t inputs = 0;
+		uint64_t written = 0; // unix timestamp of last write
+		std::filesystem::path path;
+	};
+	std::vector<SessionInfo> listSessions();
+	void clearAllSessions();
+}
+
+namespace hud {
+	bool enabled();          // in-game overlay setting
+	bool showState();
+	bool showFrame();
+	bool showPercent();
+	bool showSpeed();
 }
 
 namespace replays {
@@ -87,6 +105,9 @@ namespace replays {
 		size_t inputs = 0;
 		float duration = 0.f;
 		bool valid = false;
+		uint64_t written = 0; // last-write time (sort key, same clock for all entries)
+		uint64_t size = 0;    // bytes on disk
+		bool hasPhys = false; // file carries per-input physics data
 	};
 	std::filesystem::path dir();    // save/geode/mods/cyber39dreamgd.gdmenu/replays
 	std::vector<Info> list();

@@ -1,2 +1,3 @@
-This file can include information on how users can support you (Ko-Fi or Patreon for example).
-You can also delete this file if you don't need it.
+GDMenu is free and open source - the best way to support it is a star on the repository,
+a bug report when something misbehaves, or sending your improvements back as a pull request.
+No donations needed: go spend that money on Geometry Dash crystals instead.
