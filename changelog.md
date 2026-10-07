@@ -14,11 +14,16 @@ The "make it infinitely better" update.
 - Two actions on the same combo: the second is disabled and the Keys tab tells you about it.
 
 ## New features
-- **In-game HUD** (Settings, off by default): bot state, frame, percent, speed and noclip accuracy in a corner of your choice. GDMenu stays invisible in gameplay unless you ask for it.
+- **In-game HUD** (Settings, off by default): bot state, frame, percent, speed, a **live input viewer** (which buttons you or the bot are holding, per player) and noclip accuracy in a corner of your choice. GDMenu stays invisible in gameplay unless you ask for it.
+- **Player Trail** (Hacks tab): draws your flight path in the theme colour - study bot lines and wave corridors.
 - **Loop Playback**: the bot auto-restarts when it dies, so you can watch a run on repeat.
 - **Stop Playback At %**: playback bails automatically at a percent - drill one section.
+- **Auto-Save Bot On Complete**: finishing a run while recording also saves a dated `.gdr2`.
 - **Sessions manager** (Bot tab): every saved resume point for every level, with per-session delete and clear-all. Sessions no longer pile up forever.
 - **Bots library upgrade**: search box (name or level), sort by name/newest/inputs, rename button, file size + "phys" badge per row, and parsed file info is cached so opening the tab stays fast with big libraries.
+- **Custom theme colour**: an 8th theme slot driven by an RGB picker in Settings.
+- **Lifetime stats** in the More tab: recordings, saves, resumes, plays, corrupt files blocked.
+- One-time **intro popup** on first launch.
 
 ## Looks
 - Tabs slide+fade in; active toggle rows get an accent strip in your theme colour; the bubble pulses while recording.

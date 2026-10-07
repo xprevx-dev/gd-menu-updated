@@ -14,6 +14,7 @@ A **replay bot** and practice toolkit for Geometry Dash, made for **both PC and 
 ## <cy>Tools & Hacks</c>
 - **Frame Stepper**: freeze the game and move one tick at a time (touch buttons on phones).
 - **Noclip**, **Speedhack** (0.1x-5x), **Show Hitboxes**, **Start Pos Switcher**.
+- **Player Trail** draws your flight path; the HUD's **input viewer** shows held buttons live.
 - Every action has a **real keybind**: capture any key, combo or mouse button in Settings.
 
 ## <cy>More & Style</c>

@@ -10,11 +10,13 @@ Nothing is shown while you play (unless you enable the HUD). **Pause** and tap t
 |---|---|
 | **Bot** | Status, Record / Play / Save Bot, **Resume session**, and the **Sessions** manager (every saved resume point, per-level delete, clear all) |
 | **Bots** | Your replay library: search, sort (name / newest / inputs), Load / Rename / Delete, Open Folder. Shows inputs, length, level, size and whether a file carries physics data |
-| **Hacks** | Noclip, Show Hitboxes, Speedhack with fine speed controls |
+| **Hacks** | Noclip, Show Hitboxes, Speedhack with fine speed controls, Player Trail (scrolls) |
 | **Tools** | Frame Stepper (+ touch step buttons on phones), Start Pos Switcher, Loop Playback, Stop-At-% |
-| **More** | Autoclicker, Safe Mode, Noclip Accuracy |
-| **Style** | 7 theme accents, bubble opacity/size, 3 preset profiles |
+| **More** | Autoclicker, Safe Mode, Noclip Accuracy, lifetime stats |
+| **Style** | 8 theme accents (last one is your own RGB colour), bubble opacity/size, 3 preset profiles |
 | **Keys** | Your keybinds at a glance + conflict warnings; click one in Settings to capture a new key |
+
+Also in Settings: **In-Game HUD** options (state / frame / percent / speed / live input viewer), **Auto-Save Bot On Complete**, and the HUD corner & size. First launch shows a one-time intro popup.
 
 ## Keybinds (PC)
 Every action has a **native Geode keybind** (Settings > GDMenu): capture any key, modifier combo like `Ctrl+Shift+G`, or a mouse button. Defaults: `F` stepper, `G` step, `N` noclip, `H` hitboxes, `S` speedhack, `Q`/`E` start pos. Edits apply instantly, and if two actions share a combo the second one is disabled and the Keys tab says so.
