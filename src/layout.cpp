@@ -143,7 +143,7 @@ class $modify(LayoutPlayLayer, PlayLayer) {
 			[](Ref<GameObject> const& o, float v) { return o->getPositionX() < v; });
 		for (auto it = first; it != objs.end(); it++) {
 			auto* o = it->data();
-			if (!o) continue;
+			if (!o || !o->getParent()) continue; // destroy triggers remove objects mid-run: never draw stale squares
 			float ox = o->getPositionX();
 			if (ox > x1) break; // sorted by X: nothing further can be in range
 			float oy = o->getPositionY();
