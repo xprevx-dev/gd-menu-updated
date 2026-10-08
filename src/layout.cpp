@@ -68,12 +68,12 @@ namespace {
 		float h = sz.height * o->getScaleY();
 		float x0 = -anc.x * w, y0 = -anc.y * h;
 		CCPoint local[4] = { { x0, y0 }, { x0 + w, y0 }, { x0 + w, y0 + h }, { x0, y0 + h } };
-		float rot = -CCDegreesToRadians(o->getRotation()); // cocos rotation is clockwise
+		float rot = -o->getRotation() * (3.14159265358979323846f / 180.f); // cocos rotation is clockwise (Geode's cocos has no CCDegreesToRadians)
 		float cs = std::cos(rot), sn = std::sin(rot);
 		CCPoint pos = o->getPosition();
 		for (int i = 0; i < 4; i++)
-			out[i] = { pos.x + local[i].x * cs - local[i].y * sn,
-				       pos.y + local[i].x * sn + local[i].y * cs };
+			out[i] = CCPoint(pos.x + local[i].x * cs - local[i].y * sn,
+			                 pos.y + local[i].x * sn + local[i].y * cs); // explicit ctor: brace-assign is ambiguous (CCPoint/CCSize operator=)
 	}
 }
 

@@ -272,7 +272,7 @@ class $modify(HackGameLayer, GJBaseGameLayer) {
 			for (int i = 0; i < 2; i++)
 				if (ps[i]) ps[i]->setPosition(ps[i]->getPosition() - m_fields->applied[i]);
 		}
-		m_fields->applied[0] = m_fields->applied[1] = { 0.f, 0.f };
+		m_fields->applied[0] = m_fields->applied[1] = CCPoint(0.f, 0.f); // explicit ctor: brace-assign is ambiguous
 		m_fields->extrapolating = false;
 	}
 
