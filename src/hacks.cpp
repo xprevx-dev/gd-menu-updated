@@ -167,8 +167,8 @@ public:
 		auto add = [&](const char* text, const char* bg, SEL_MenuHandler sel, float x) {
 			auto spr = ButtonSprite::create(text, 50, true, "bigFont.fnt", bg, 26.f, 0.6f);
 			spr->setScale(0.8f * s);
-			spr->setOpacity(190);
-			spr->setCascadeOpacityEnabled(true);
+			spr->setOpacity(190); // CCSprite has its own opacity; cascade does not exist in Geode's cocos
+			if (spr->m_label) spr->m_label->setOpacity(190); // dim the caption along with the button
 			auto btn = CCMenuItemSpriteExtra::create(spr, this, sel);
 			btn->setPosition({ x * s, 0 });
 			this->addChild(btn);

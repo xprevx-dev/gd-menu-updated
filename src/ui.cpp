@@ -461,14 +461,11 @@ protected:
 			case TabMore:  buildMoreTab(); break;
 			case TabStyle: buildStyleTab(); break;
 		}
-		// soft slide+fade when switching tabs
-		m_content->setCascadeOpacityEnabled(true);
-		m_content->setOpacity(0);
+		// soft slide when switching tabs (plain CCNode has no opacity API in Geode's
+		// cocos headers - setCascadeOpacityEnabled/setOpacity live on CCNodeRGBA/CCSprite
+		// only, so the fade is dropped and the slide alone carries the transition)
 		m_content->setPosition(m_areaOrigin - CCPoint(0.f, 6.f));
-		m_content->runAction(CCSpawn::create(
-			CCFadeIn::create(0.12f),
-			CCEaseOut::create(CCMoveTo::create(0.12f, m_areaOrigin), 2.f),
-			nullptr));
+		m_content->runAction(CCEaseOut::create(CCMoveTo::create(0.12f, m_areaOrigin), 2.f));
 	}
 
 	CCMenu* contentMenu() {
@@ -1512,7 +1509,7 @@ protected:
 	CCPoint m_touchStart, m_nodeStart;
 	bool m_dragged = false;
 
-	bool init() {
+	bool init() override {
 		if (!CCLayer::init()) return false;
 		this->setID("floating-button"_spr);
 		this->ignoreAnchorPointForPosition(false);
